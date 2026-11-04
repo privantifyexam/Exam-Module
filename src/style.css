@@ -202,3 +202,8 @@ body.dlg-open{overflow:hidden}
 .admlist .am b{font-size:14px;word-break:break-all}
 .admlist .am span{font-size:12px;color:var(--sc-faint)}
 .admlist .tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--brand-fg)}
+.pw{position:relative}
+.pw .input{padding-right:76px}
+.pw-t{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:36px;padding:0 12px;border:0;border-radius:var(--r-sm);background:transparent;color:var(--brand-fg);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.pw-t:hover{background:var(--tint-brand-lift)}
+.pw-t:focus-visible{outline:2px solid var(--brand-fg);outline-offset:1px}

@@ -28,10 +28,14 @@
       const g = el('adminGate'), err = el('gErr'), btn = el('gBtn');
       const say = t => { err.textContent = t; err.hidden = !t; };
       g.hidden = false; el('gEmail').focus();
+      const pwShow = on => { el('gPass').type = on ? 'text' : 'password'; el('gShow').textContent = on ? 'Hide' : 'Show'; el('gShow').setAttribute('aria-pressed', String(on)); el('gShow').setAttribute('aria-label', on ? 'Hide password' : 'Show password'); };
+      pwShow(false);
+      el('gShow').onclick = () => { pwShow(el('gPass').type === 'password'); el('gPass').focus(); };
       el('gForm').onsubmit = async ev => {
         ev.preventDefault(); say(''); btn.disabled = true; btn.textContent = 'Signing in…';
         try {
           const u = (await auth.signInWithEmailAndPassword(el('gEmail').value.trim(), el('gPass').value)).user;
+          pwShow(false);   // never leave the password showing after a sign-in attempt
           if (await isInvigilator(fs)){ el('gPass').value = ''; g.hidden = true; resolve(u); return; }
           await auth.signOut(); say('This account is not an invigilator. Ask the exam owner to add it.');
         } catch(e){ say(authMsg(e)); }
