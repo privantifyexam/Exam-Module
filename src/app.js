@@ -61,6 +61,8 @@ const mmss = ms => { ms = Math.max(0, Math.round(ms/1000)); return Math.floor(ms
 const fmtT = t => t ? new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '–';
 // error text for messages, without its own trailing full stop
 const errText = e => String((e && (e.message || e.code)) || 'unknown error').trim().replace(/[.\s]+$/, '');
+// spreadsheet apps run cells that start with = + - @ as formulas; a leading ' keeps typed text as text
+const csvSafe = v => { const t = String(v == null ? '' : v); return /^[=+\-@\t\r]/.test(t) && !/^-?\d+(\.\d+)?%?$/.test(t) ? "'" + t : t; };
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const say = t => { const r = $('sr'); r.textContent = ''; setTimeout(() => r.textContent = t, 30); };
 
@@ -449,7 +451,7 @@ async function logoPng(){
 async function buildFile(kind, m){
   const base = 'SugarCARE_' + TR + '_marklist_' + m.stamp;
   if (kind === 'csv'){
-    const q = v => '"' + String(v == null ? '' : v).replace(/"/g,'""') + '"';
+    const q = v => '"' + csvSafe(v).replace(/"/g,'""') + '"';
     return {filename: base + '.csv', data: '﻿' + [m.head].concat(m.body).map(r => r.map(q).join(',')).join('\r\n')};
   }
   if (kind === 'xlsx'){

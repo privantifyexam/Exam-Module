@@ -16,7 +16,7 @@ function parseCsv(text){
   if (f !== '' || row.length){ row.push(f); rows.push(row); }
   return rows.filter(r => r.some(x => x.trim() !== ''));
 }
-const csvCell = v => /[",\n\r]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+const csvCell = v => { const t = csvSafe(v); return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
 const toCsv = rows => rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
 // returns {qs, answers, errs}; questions keep the CSV order (the exam shuffles within each level)
 function readQuestions(text){
@@ -28,7 +28,7 @@ function readQuestions(text){
   if (missing.length) return {errs: ['The first row must be the header. Missing column' + (missing.length > 1 ? 's' : '') + ': ' + missing.join(', ') + '. Use the Sample CSV as a template.']};
   const qs = [], answers = [];
   rows.slice(1).forEach((r, k) => {
-    const line = k + 2, get = c => at[c] >= 0 ? String(r[at[c]] || '').trim() : '';
+    const line = k + 2, get = c => at[c] >= 0 ? String(r[at[c]] || '').trim().replace(/^'(?=[=+\-@])/, '') : '';
     const lv = get('level').toLowerCase(), level = LV.find(l => l.toLowerCase() === lv);
     const q = get('question');
     const opts = ['a','b','c','d','e','f'].map(x => get('option_' + x));

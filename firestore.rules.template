@@ -46,7 +46,8 @@ service cloud.firestore {
     // attempts: each person reads and writes their own doc; invigilator reads all and may clear
     match /results/{uid} {
       allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
-      allow create, update: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      // staff: own doc only, at most 20 attempts in it (each attempt is an a_<id> field)
+      allow create, update: if isAdmin() || (signedIn() && request.auth.uid == uid && request.resource.data.size() <= 20);
       allow delete: if isAdmin();
     }
   }
