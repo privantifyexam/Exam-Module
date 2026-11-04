@@ -80,7 +80,7 @@ $('qSave').onclick = async () => {
   try {
     await db.doc('questions/' + TR).set({qs: r.qs, updatedAt: Date.now()});
     await db.doc(T.key).set({answers: r.answers});
-    setQs(TR, r.qs); qReset(); paintAdmin(); paintQs();
+    setQs(TR, r.qs); qReset(); paintAdmin(); paintQs(); paintQList();
     msg(r.qs.length + ' questions and their answer key saved for the ' + T.name + '.');
   } catch(e){ $('qErrT').textContent = 'Could not save: ' + errText(e) + '. Try again.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; }
   b.disabled = false; b.textContent = 'Save questions and key';
@@ -98,4 +98,22 @@ $('qExport').onclick = () => {
   const k = key && key.answers;
   qDownload(TR + '_questions.csv', [Q_COLS].concat(QS.map((q, i) => [q.l, q.q].concat([0,1,2,3,4,5].map(j => q.o[j] || ''), [k && k[i] >= 0 ? Q_LETTERS[k[i]] : '']))));
 };
+// question viewer: every question with its options, the correct one marked from the stored key
+let qLvF = '', qOpen = false;
+function paintQList(){
+  if (!qOpen) return;
+  const k = key && key.answers, s = $('qSearch').value.trim().toLowerCase();
+  const shown = QS.map((q, i) => ({q, i})).filter(({q}) => (!qLvF || q.l === qLvF) && (!s || (q.q + ' ' + q.o.join(' ')).toLowerCase().includes(s)));
+  $('qDlgT').textContent = 'Questions and answers · ' + T.name;
+  $('qListNote').textContent = !N ? 'No questions yet. Upload a CSV to add them.' : 'Showing ' + shown.length + ' of ' + N + ' questions in upload order.' + (k ? '' : ' No answer key is saved, so answers are not marked.');
+  $('qItems').innerHTML = shown.map(({q, i}) => '<li><div class="qh"><span class="qn">' + (i + 1) + '.</span><span class="qt">' + esc(q.q) + '</span><span class="lv">' + esc(q.l) + '</span></div><ul>'
+    + q.o.map((o, j) => '<li' + (k && k[i] === j ? ' class="ok"' : '') + '><b>' + Q_LETTERS[j] + '</b><span>' + esc(o) + '</span></li>').join('') + '</ul></li>').join('');
+}
+function qOpenDlg(){ qOpen = true; paintQList(); document.body.classList.add('dlg-open'); $('qDlg').showModal(); $('qSearch').focus(); }
+$('qView').onclick = qOpenDlg;
+$('qClose').onclick = () => $('qDlg').close();
+$('qDlg').addEventListener('close', () => { qOpen = false; document.body.classList.remove('dlg-open'); $('qView').focus(); });
+$('qDlg').addEventListener('click', ev => { if (ev.target === $('qDlg')) $('qDlg').close(); });   // click outside the box closes it
+$('qSearch').oninput = paintQList;
+document.querySelectorAll('#qLv button').forEach(b => b.onclick = () => { qLvF = b.dataset.lv; document.querySelectorAll('#qLv button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); paintQList(); });
 setInterval(paintQs, 1000);

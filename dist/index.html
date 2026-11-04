@@ -553,6 +553,22 @@ td.num,th.num{text-align:right}
 .gate .col{margin:0 auto}
 .signout{margin-left:12px;background:none;border:0;padding:0;color:inherit;font:inherit;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer}
 .qerr{margin:0;padding-left:18px;font-size:13px}
+.qlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.qlist>li{border:1px solid var(--sc-border);border-radius:var(--r-sm);padding:14px 16px;background:var(--surface-1)}
+.qlist .qh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+.qlist .qn{font-weight:800;color:var(--brand-fg)}
+.qlist .qt{font-weight:600;flex:1;min-width:200px;white-space:pre-wrap}
+.qlist .lv{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--sc-faint)}
+.qlist ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.qlist ul li{display:flex;gap:8px;padding:4px 8px;border-radius:6px;font-size:14px}
+.qlist ul li b{min-width:18px}
+.qlist ul li.ok{background:var(--tint-brand-lift);font-weight:700}
+.qlist ul li.ok::after{content:"✓ Answer";margin-left:auto;font-size:12px;color:var(--brand-fg)}
+.qdlg{width:min(860px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:0;border:1px solid var(--sc-border);border-radius:var(--r-lg);background:var(--surface-2);color:inherit;box-shadow:var(--sh-1)}
+.qdlg::backdrop{background:rgba(20,10,60,.55)}
+.qdlg-in{padding:20px 24px 24px}
+.qdlg-head{position:sticky;top:0;z-index:1;background:var(--surface-2);padding:4px 0 8px;margin-top:-4px}
+body.dlg-open{overflow:hidden}
 </style>
 <header class="top">
   <div class="top-in">
@@ -569,6 +585,24 @@ td.num,th.num{text-align:right}
 
 <main>
 <!-- SIGN IN -->
+<!-- QUESTION VIEWER (invigilator) -->
+<dialog class="qdlg" id="qDlg" aria-labelledby="qDlgT">
+  <div class="qdlg-in stack s8">
+    <div class="row between qdlg-head">
+      <h2 id="qDlgT">Questions and answers</h2>
+      <button class="btn btn-sm btn-ghost" id="qClose" type="button">Close</button>
+    </div>
+      <div class="row filters">
+        <div class="field grow"><label class="sr-only" for="qSearch">Search questions</label><input class="input" id="qSearch" type="search" placeholder="Search questions or options" autocomplete="off"></div>
+        <div class="seg" role="group" aria-label="Filter by level" id="qLv">
+          <button type="button" data-lv="" aria-pressed="true">All</button><button type="button" data-lv="Easy" aria-pressed="false">Easy</button><button type="button" data-lv="Medium" aria-pressed="false">Medium</button><button type="button" data-lv="Hard" aria-pressed="false">Hard</button>
+        </div>
+      </div>
+      <p class="help" id="qListNote"></p>
+      <ol class="qlist" id="qItems"></ol>
+  </div>
+</dialog>
+
 <!-- INVIGILATOR SIGN-IN (Firebase email and password; shown only with ?admin) -->
 <div id="adminGate" class="gate" hidden>
   <section class="col">
@@ -757,7 +791,7 @@ td.num,th.num{text-align:right}
   <div class="card stack" style="margin-top:16px" id="qCard">
     <div class="row between">
       <h2>Questions and answer key <span class="muted small" id="qCount"></span></h2>
-      <div class="row"><button class="btn btn-sm btn-ghost" id="qSample" type="button">Sample CSV</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download current</button></div>
+      <div class="row"><button class="btn btn-sm btn-ghost" id="qSample" type="button">Sample CSV</button><button class="btn btn-sm btn-ghost" id="qView" type="button" aria-haspopup="dialog">View questions</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download current</button></div>
     </div>
     <p class="help">Upload a .csv file with one question per row: level, question, options A to D (E and F optional) and the correct option letter. Uploading replaces all questions and the answer key for this assessment. You can't upload while an exam is live.</p>
     <div class="row"><input class="input" id="qFile" type="file" accept=".csv,text/csv" aria-label="Questions CSV file" style="flex:1;min-width:220px"></div>
@@ -1424,7 +1458,7 @@ function route(){
   if (!isAdmin) return;
   const h = (location.hash || '').slice(1);
   if (TRACKS[h]){
-    useTrack(h); applyTrackText(); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = '';
+    useTrack(h); applyTrackText(); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = ''; if (typeof paintQList === 'function') paintQList();
     $('who').textContent = 'Invigilator · ' + T.name; show('sAdmin'); paintAdmin(); $('aHome').focus();
   } else { $('who').textContent = 'Invigilator view'; $('topName').textContent = 'All assessments'; show('sHome'); paintHome(); }
 }
@@ -1491,7 +1525,7 @@ async function boot(){
     route();
     Object.keys(TRACKS).forEach(tr => {
       db.doc(TRACKS[tr].state).onSnapshot(s => { states[tr] = s.exists ? s.data() : {status:'idle'}; if (tr === TR && !preview) exam = states[tr]; paintAdmin(); paintHome(); }, () => {});
-      db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; paintAdmin(); });
+      db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; paintAdmin(); if (typeof paintQList === 'function') paintQList(); });
       db.doc(TRACKS[tr].code).onSnapshot(s => { codes[tr] = s.exists ? s.data() : null; if (tr === TR) secCode = codes[tr]; paintAdmin(); });
     });
     db.collection('results').onSnapshot(s => { resDocs = s.docs.map(d => d.id); results = []; Object.keys(rawDocs).forEach(k => delete rawDocs[k]); s.docs.forEach(d => { const o = d.data(); rawDocs[d.id] = o; Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0) results.push(Object.assign({_id:k}, o[k])); }); }); paintAdmin(); paintHome(); });
@@ -1581,7 +1615,7 @@ $('qSave').onclick = async () => {
   try {
     await db.doc('questions/' + TR).set({qs: r.qs, updatedAt: Date.now()});
     await db.doc(T.key).set({answers: r.answers});
-    setQs(TR, r.qs); qReset(); paintAdmin(); paintQs();
+    setQs(TR, r.qs); qReset(); paintAdmin(); paintQs(); paintQList();
     msg(r.qs.length + ' questions and their answer key saved for the ' + T.name + '.');
   } catch(e){ $('qErrT').textContent = 'Could not save: ' + errText(e) + '. Try again.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; }
   b.disabled = false; b.textContent = 'Save questions and key';
@@ -1599,5 +1633,23 @@ $('qExport').onclick = () => {
   const k = key && key.answers;
   qDownload(TR + '_questions.csv', [Q_COLS].concat(QS.map((q, i) => [q.l, q.q].concat([0,1,2,3,4,5].map(j => q.o[j] || ''), [k && k[i] >= 0 ? Q_LETTERS[k[i]] : '']))));
 };
+// question viewer: every question with its options, the correct one marked from the stored key
+let qLvF = '', qOpen = false;
+function paintQList(){
+  if (!qOpen) return;
+  const k = key && key.answers, s = $('qSearch').value.trim().toLowerCase();
+  const shown = QS.map((q, i) => ({q, i})).filter(({q}) => (!qLvF || q.l === qLvF) && (!s || (q.q + ' ' + q.o.join(' ')).toLowerCase().includes(s)));
+  $('qDlgT').textContent = 'Questions and answers · ' + T.name;
+  $('qListNote').textContent = !N ? 'No questions yet. Upload a CSV to add them.' : 'Showing ' + shown.length + ' of ' + N + ' questions in upload order.' + (k ? '' : ' No answer key is saved, so answers are not marked.');
+  $('qItems').innerHTML = shown.map(({q, i}) => '<li><div class="qh"><span class="qn">' + (i + 1) + '.</span><span class="qt">' + esc(q.q) + '</span><span class="lv">' + esc(q.l) + '</span></div><ul>'
+    + q.o.map((o, j) => '<li' + (k && k[i] === j ? ' class="ok"' : '') + '><b>' + Q_LETTERS[j] + '</b><span>' + esc(o) + '</span></li>').join('') + '</ul></li>').join('');
+}
+function qOpenDlg(){ qOpen = true; paintQList(); document.body.classList.add('dlg-open'); $('qDlg').showModal(); $('qSearch').focus(); }
+$('qView').onclick = qOpenDlg;
+$('qClose').onclick = () => $('qDlg').close();
+$('qDlg').addEventListener('close', () => { qOpen = false; document.body.classList.remove('dlg-open'); $('qView').focus(); });
+$('qDlg').addEventListener('click', ev => { if (ev.target === $('qDlg')) $('qDlg').close(); });   // click outside the box closes it
+$('qSearch').oninput = paintQList;
+document.querySelectorAll('#qLv button').forEach(b => b.onclick = () => { qLvF = b.dataset.lv; document.querySelectorAll('#qLv button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); paintQList(); });
 setInterval(paintQs, 1000);
 </script>

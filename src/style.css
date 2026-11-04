@@ -180,3 +180,19 @@ td.num,th.num{text-align:right}
 .gate .col{margin:0 auto}
 .signout{margin-left:12px;background:none;border:0;padding:0;color:inherit;font:inherit;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer}
 .qerr{margin:0;padding-left:18px;font-size:13px}
+.qlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
+.qlist>li{border:1px solid var(--sc-border);border-radius:var(--r-sm);padding:14px 16px;background:var(--surface-1)}
+.qlist .qh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+.qlist .qn{font-weight:800;color:var(--brand-fg)}
+.qlist .qt{font-weight:600;flex:1;min-width:200px;white-space:pre-wrap}
+.qlist .lv{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--sc-faint)}
+.qlist ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.qlist ul li{display:flex;gap:8px;padding:4px 8px;border-radius:6px;font-size:14px}
+.qlist ul li b{min-width:18px}
+.qlist ul li.ok{background:var(--tint-brand-lift);font-weight:700}
+.qlist ul li.ok::after{content:"✓ Answer";margin-left:auto;font-size:12px;color:var(--brand-fg)}
+.qdlg{width:min(860px,calc(100vw - 32px));max-height:calc(100vh - 48px);padding:0;border:1px solid var(--sc-border);border-radius:var(--r-lg);background:var(--surface-2);color:inherit;box-shadow:var(--sh-1)}
+.qdlg::backdrop{background:rgba(20,10,60,.55)}
+.qdlg-in{padding:20px 24px 24px}
+.qdlg-head{position:sticky;top:0;z-index:1;background:var(--surface-2);padding:4px 0 8px;margin-top:-4px}
+body.dlg-open{overflow:hidden}

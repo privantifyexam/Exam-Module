@@ -534,7 +534,7 @@ function route(){
   if (!isAdmin) return;
   const h = (location.hash || '').slice(1);
   if (TRACKS[h]){
-    useTrack(h); applyTrackText(); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = '';
+    useTrack(h); applyTrackText(); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = ''; if (typeof paintQList === 'function') paintQList();
     $('who').textContent = 'Invigilator · ' + T.name; show('sAdmin'); paintAdmin(); $('aHome').focus();
   } else { $('who').textContent = 'Invigilator view'; $('topName').textContent = 'All assessments'; show('sHome'); paintHome(); }
 }
@@ -601,7 +601,7 @@ async function boot(){
     route();
     Object.keys(TRACKS).forEach(tr => {
       db.doc(TRACKS[tr].state).onSnapshot(s => { states[tr] = s.exists ? s.data() : {status:'idle'}; if (tr === TR && !preview) exam = states[tr]; paintAdmin(); paintHome(); }, () => {});
-      db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; paintAdmin(); });
+      db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; paintAdmin(); if (typeof paintQList === 'function') paintQList(); });
       db.doc(TRACKS[tr].code).onSnapshot(s => { codes[tr] = s.exists ? s.data() : null; if (tr === TR) secCode = codes[tr]; paintAdmin(); });
     });
     db.collection('results').onSnapshot(s => { resDocs = s.docs.map(d => d.id); results = []; Object.keys(rawDocs).forEach(k => delete rawDocs[k]); s.docs.forEach(d => { const o = d.data(); rawDocs[d.id] = o; Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0) results.push(Object.assign({_id:k}, o[k])); }); }); paintAdmin(); paintHome(); });

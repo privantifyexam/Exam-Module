@@ -13,6 +13,24 @@
 
 <main>
 <!-- SIGN IN -->
+<!-- QUESTION VIEWER (invigilator) -->
+<dialog class="qdlg" id="qDlg" aria-labelledby="qDlgT">
+  <div class="qdlg-in stack s8">
+    <div class="row between qdlg-head">
+      <h2 id="qDlgT">Questions and answers</h2>
+      <button class="btn btn-sm btn-ghost" id="qClose" type="button">Close</button>
+    </div>
+      <div class="row filters">
+        <div class="field grow"><label class="sr-only" for="qSearch">Search questions</label><input class="input" id="qSearch" type="search" placeholder="Search questions or options" autocomplete="off"></div>
+        <div class="seg" role="group" aria-label="Filter by level" id="qLv">
+          <button type="button" data-lv="" aria-pressed="true">All</button><button type="button" data-lv="Easy" aria-pressed="false">Easy</button><button type="button" data-lv="Medium" aria-pressed="false">Medium</button><button type="button" data-lv="Hard" aria-pressed="false">Hard</button>
+        </div>
+      </div>
+      <p class="help" id="qListNote"></p>
+      <ol class="qlist" id="qItems"></ol>
+  </div>
+</dialog>
+
 <!-- INVIGILATOR SIGN-IN (Firebase email and password; shown only with ?admin) -->
 <div id="adminGate" class="gate" hidden>
   <section class="col">
@@ -201,7 +219,7 @@
   <div class="card stack" style="margin-top:16px" id="qCard">
     <div class="row between">
       <h2>Questions and answer key <span class="muted small" id="qCount"></span></h2>
-      <div class="row"><button class="btn btn-sm btn-ghost" id="qSample" type="button">Sample CSV</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download current</button></div>
+      <div class="row"><button class="btn btn-sm btn-ghost" id="qSample" type="button">Sample CSV</button><button class="btn btn-sm btn-ghost" id="qView" type="button" aria-haspopup="dialog">View questions</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download current</button></div>
     </div>
     <p class="help">Upload a .csv file with one question per row: level, question, options A to D (E and F optional) and the correct option letter. Uploading replaces all questions and the answer key for this assessment. You can't upload while an exam is live.</p>
     <div class="row"><input class="input" id="qFile" type="file" accept=".csv,text/csv" aria-label="Questions CSV file" style="flex:1;min-width:220px"></div>
