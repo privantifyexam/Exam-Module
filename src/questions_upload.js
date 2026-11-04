@@ -52,7 +52,7 @@ function paintQs(){
   if (!isAdmin) return;
   const lc = lvCount();
   $('qCount').textContent = N ? '· ' + N + ' (Easy ' + lc.e + ', Medium ' + lc.m + ', Hard ' + lc.h + ')' + (key ? '' : ' · no key') : '· none yet';
-  $('qFile').disabled = eff() === 'live';
+  $('qFile').disabled = $('qClear').disabled = eff() === 'live';
 }
 function qReset(){ qPending = null; $('qFile').value = ''; $('qErrBox').hidden = true; $('qOkBox').hidden = true; }
 $('qFile').onchange = async () => {
@@ -116,4 +116,32 @@ $('qDlg').addEventListener('close', () => { qOpen = false; document.body.classLi
 $('qDlg').addEventListener('click', ev => { if (ev.target === $('qDlg')) $('qDlg').close(); });   // click outside the box closes it
 $('qSearch').oninput = paintQList;
 document.querySelectorAll('#qLv button').forEach(b => b.onclick = () => { qLvF = b.dataset.lv; document.querySelectorAll('#qLv button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); paintQList(); });
+// clear the question set: two steps (confirm, then type CLEAR). Saves an empty set so the built-in questions don't come back.
+let qClrStep = 0;
+function qClrPaint(){
+  $('qClrBox').hidden = !qClrStep; $('qClr2').hidden = qClrStep !== 2;
+  $('qClrT').textContent = qClrStep === 1 ? 'Clear all ' + N + ' questions and the answer key for the ' + T.name + '? Staff will not be able to take this test, and Start exam stays blocked until you upload a new CSV. Download current first if you want a copy.'
+    : 'Second check: this cannot be undone. Type CLEAR and press Clear permanently.';
+  $('qClrYes').textContent = qClrStep === 2 ? 'Clear permanently' : 'Yes, clear them';
+  $('qClrYes').disabled = qClrStep === 2 && $('qClrIn').value.trim().toUpperCase() !== 'CLEAR';
+}
+$('qClear').onclick = () => {
+  if (eff() === 'live'){ msg('End the exam before clearing its questions.'); return; }
+  if (!N && !key){ msg('There are no questions to clear.'); return; }
+  qReset(); $('qClrIn').value = ''; qClrStep = 1; qClrPaint(); $('qClrNo').focus();
+};
+$('qClrNo').onclick = () => { qClrStep = 0; qClrPaint(); $('qClear').focus(); };
+$('qClrIn').oninput = qClrPaint;
+$('qClrYes').onclick = async () => {
+  if (qClrStep === 1){ qClrStep = 2; qClrPaint(); $('qClrIn').focus(); return; }
+  if ($('qClrIn').value.trim().toUpperCase() !== 'CLEAR') return;
+  if (eff() === 'live'){ qClrStep = 0; qClrPaint(); msg('End the exam before clearing its questions.'); return; }
+  const b = $('qClrYes'); b.disabled = true; b.textContent = 'Clearing…';
+  try {
+    await db.doc('questions/' + TR).set({qs: [], clearedAt: Date.now()});
+    await db.doc(T.key).delete();
+    key = keys[TR] = null; setQs(TR, []); qClrStep = 0; qClrPaint(); paintAdmin(); paintQs(); paintQList();
+    msg('Questions and answer key cleared for the ' + T.name + '. Upload a new CSV before starting an exam.');
+  } catch(e){ qClrStep = 0; qClrPaint(); msg('Could not clear the questions: ' + errText(e) + '. Nothing was changed; try again.'); }
+};
 setInterval(paintQs, 1000);

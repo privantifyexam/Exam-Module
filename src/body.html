@@ -219,10 +219,17 @@
   <div class="card stack" style="margin-top:16px" id="qCard">
     <div class="row between">
       <h2>Questions and answer key <span class="muted small" id="qCount"></span></h2>
-      <div class="row"><button class="btn btn-sm btn-ghost" id="qSample" type="button">Sample CSV</button><button class="btn btn-sm btn-ghost" id="qView" type="button" aria-haspopup="dialog">View questions</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download current</button></div>
+      <div class="row"><button class="btn btn-sm btn-ghost" id="qSample" type="button">Sample CSV</button><button class="btn btn-sm btn-ghost" id="qView" type="button" aria-haspopup="dialog">View questions</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download current</button><button class="btn btn-sm btn-quiet" id="qClear" type="button">Clear questions</button></div>
     </div>
     <p class="help">Upload a .csv file with one question per row: level, question, options A to D (E and F optional) and the correct option letter. Uploading replaces all questions and the answer key for this assessment. You can't upload while an exam is live.</p>
     <div class="row"><input class="input" id="qFile" type="file" accept=".csv,text/csv" aria-label="Questions CSV file" style="flex:1;min-width:220px"></div>
+    <div class="notice bad stack s8" id="qClrBox" role="alertdialog" aria-labelledby="qClrT" hidden>
+      <span id="qClrT"></span>
+      <div class="stack s8" id="qClr2" hidden>
+        <div class="field" style="max-width:260px"><label for="qClrIn">Type CLEAR to confirm</label><input class="input" id="qClrIn" type="text" autocomplete="off" spellcheck="false"></div>
+      </div>
+      <div class="row"><button class="btn btn-danger" id="qClrYes" type="button">Yes, clear them</button><button class="btn btn-ghost" id="qClrNo" type="button">Cancel</button></div>
+    </div>
     <div class="notice bad stack s8" id="qErrBox" role="alert" hidden><b id="qErrT"></b><ul class="qerr" id="qErrs"></ul></div>
     <div class="notice info stack s8" id="qOkBox" role="status" hidden>
       <span id="qOkT"></span>

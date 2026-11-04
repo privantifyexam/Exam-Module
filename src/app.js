@@ -13,7 +13,7 @@ const LV = ['Easy','Medium','Hard'];
 const lvCount = () => ({e: QS.filter(q => q.l === 'Easy').length, m: QS.filter(q => q.l === 'Medium').length, h: QS.filter(q => q.l === 'Hard').length});
 const needMin = () => Math.ceil(N * SEC / 60);
 // questions saved from the dashboard (questions/<track>) replace the ones built into the page
-function setQs(tr, qs){ TRACKS[tr].qs = qs; if (tr === TR){ QS = qs; N = qs.length; applyTrackText(); } }
+function setQs(tr, qs){ TRACKS[tr].qs = qs; TRACKS[tr].uploaded = true; if (tr === TR){ QS = qs; N = qs.length; applyTrackText(); } }
 async function loadQs(){ await Promise.all(Object.keys(TRACKS).map(tr => db.doc('questions/' + tr).get().then(s => { if (s.exists && Array.isArray(s.data().qs)) setQs(tr, s.data().qs); }).catch(() => {}))); }
 function useTrack(tr){ TR = tr; T = TRACKS[tr]; QS = T.qs; N = QS.length; LS = T.ls; exam = states[tr] || {status:'idle'}; key = keys[tr] || null; secCode = codes[tr] || null; }
 const $ = id => document.getElementById(id);
@@ -336,7 +336,7 @@ function paintAdmin(){
   if (!live) endArmed = false;
   $('aEnd').hidden = endArmed; $('aEndBox').hidden = !endArmed;
   $('aStart').textContent = s === 'idle' ? 'Start exam' : 'Start a new exam';
-  $('aStart').disabled = !N; $('aNoQs').hidden = !!N; $('aTry').disabled = !N;
+  $('aStart').disabled = false; { const why = startBlock(); $('aNoQs').textContent = why ? 'Start exam is blocked. ' + why : ''; $('aNoQs').hidden = !why || s === 'live'; } $('aTry').disabled = !N;
   const lc = lvCount(); $('thS').textContent = 'Score /' + N; $('thE').textContent = 'Easy /' + lc.e; $('thM').textContent = 'Med /' + lc.m; $('thH').textContent = 'Hard /' + lc.h;
   const done = all.filter(r => r.status === 'submitted').length, prog = all.length - done;
   $('aEndText').textContent = prog
@@ -345,7 +345,7 @@ function paintAdmin(){
   const scored = all.filter(r => r.sc && r.status === 'submitted'), avg = scored.length ? (scored.reduce((x,r)=>x+r.sc.t,0)/scored.length).toFixed(1) : '–';
   $('aStats').innerHTML = [['Started',all.length,T.many,''],['In progress',prog,'taking the test','t-brand'],['Submitted',done,'finished','t-green'],['Average',avg,scored.length ? 'out of ' + N : 'no scores yet','']]
     .map(([l,v,u,c]) => '<div class="stat '+c+'"><span class="sl">'+l+'</span><b>'+v+'</b><span class="su">'+u+'</span></div>').join('');
-  $('aKeyWarn').hidden = !!key || !N;
+  $('aKeyWarn').hidden = !!key || !N || !$('aNoQs').hidden;
   $('aKeyNote').textContent = key ? 'Scores are worked out on this screen from the stored answer key. Staff never see the key or their marks.' : '';
   $('cAll').textContent = all.length; $('cRun').textContent = prog; $('cSub').textContent = done;
   document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === fSt)));
@@ -379,13 +379,29 @@ function paintAdminTimes(){
   if (exam.status === 'live' && s === 'ended' && !paintAdminTimes.closing){ paintAdminTimes.closing = true; db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt: exam.endsAt})).finally(() => paintAdminTimes.closing = false); }
 }
 $('aMins').addEventListener('input', () => { const v = +$('aMins').value; $('aMinsWarn').hidden = !(v && v < needMin()); });
+// why the exam can't start yet ('' when it can): needs uploaded questions and a matching answer key
+function startBlock(){
+  if (!T.uploaded || !N) return 'No questions have been uploaded for the ' + T.name + '. Upload the questions CSV in "Questions and answer key" below, then start the exam.';
+  const a = key && key.answers;
+  if (!Array.isArray(a) || !a.length) return 'The answer key is missing. Upload the questions CSV again so the key is saved, then start the exam.';
+  if (a.length !== N || a.some((x, i) => !(x >= 0 && x < QS[i].o.length))) return 'The answer key does not match the ' + N + ' questions. Upload the questions CSV again, then start the exam.';
+  return '';
+}
 $('aStart').onclick = async () => {
-  if (!N) return;
+  $('aErr').textContent = '';
+  // check the saved copy too, in case questions or key changed in another window
+  try {
+    const [qs, k] = await Promise.all([db.doc('questions/' + TR).get(), db.doc(T.key).get()]);
+    if (qs.exists && Array.isArray(qs.data().qs)) setQs(TR, qs.data().qs); else { T.uploaded = false; }
+    key = keys[TR] = k.exists ? k.data() : null;
+  } catch(e){ $('aErr').textContent = 'Could not check the questions: ' + errText(e) + '. Try again.'; return; }
+  const why = startBlock();
+  if (why){ $('aErr').textContent = 'Exam not started. ' + why; paintAdmin(); return; }
   const m = Math.min(180, Math.max(5, +$('aMins').value || 35)), t = Date.now();
   $('aMins').value = m; $('aErr').textContent = ''; $('aStart').disabled = true;
   try { const code = newCode(); await db.doc(T.code).set({code, examId:String(t)}); await db.doc(T.state).set({status:'live', startedAt:t, endsAt:t+m*60000, windowMin:m, codeHash: await hashCode(code, String(t))}); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; msg('Exam opened for ' + m + ' minutes. It closes at ' + fmtT(t+m*60000) + '. Security code: ' + code + '. Share the exam link and the code with the ' + T.many + '.'); }
   catch(e){ $('aErr').textContent = 'Could not start the exam: ' + errText(e) + '. Check your connection and press Start exam again.'; }
-  $('aStart').disabled = !N;
+  $('aStart').disabled = false;
 };
 $('aEnd').onclick = () => { endArmed = true; paintAdmin(); $('aEndNo').focus(); };
 $('aEndNo').onclick = () => { endArmed = false; paintAdmin(); $('aEnd').focus(); };
