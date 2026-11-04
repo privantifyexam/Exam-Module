@@ -41,7 +41,7 @@ document.addEventListener('visibilitychange', () => {
 function paintAway(){
   const n = (sess && sess.away) || 0, el = $('awayBanner');
   el.hidden = !(n && sess.awayNote);
-  el.firstElementChild.textContent = 'You left the test ' + (n === 1 ? 'once' : n + ' times') + '. Each time is recorded and shown to the invigilator.';
+  el.firstElementChild.textContent = 'You left the test ' + (n === 1 ? 'once' : n + ' times') + '. The invigilator can see this.';
 }
 $('awayX').onclick = () => { if (sess){ sess.awayNote = false; lsSet(sess); } paintAway(); };
 ['copy','cut','contextmenu','selectstart','dragstart'].forEach(t => document.addEventListener(t, ev => { if (inTest() && !ev.target.closest('input,select,textarea')) ev.preventDefault(); }));
@@ -56,6 +56,10 @@ const TICK = '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><polyline
 const show = id => { ['sLogin','sCode','sReady','sQuiz','sDone','sHome','sAdmin'].forEach(s => $(s).hidden = s !== id); try { window.scrollTo(0, 0); } catch(e){} };
 const lsGet = () => { try { return JSON.parse(localStorage.getItem(LS)); } catch(e){ return null; } };
 const lsSet = v => { try { v ? localStorage.setItem(LS, JSON.stringify(v)) : localStorage.removeItem(LS); } catch(e){} };
+// exam stages: idle → open (created with its security code; staff can join and wait) → live (answering) → ended
+const canJoin = s => s === 'open' || s === 'live';
+// the exam whose marks the dashboard shows: while the next exam waits to start, keep showing the last one's
+const marksId = st => st.status === 'open' ? (st.lastId || '') : st.startedAt ? String(st.startedAt) : '';
 const eff = () => exam.status === 'live' ? (Date.now() < exam.endsAt ? 'live' : 'ended') : exam.status;
 const mmss = ms => { ms = Math.max(0, Math.round(ms/1000)); return Math.floor(ms/60) + ':' + String(ms%60).padStart(2,'0'); };
 const fmtT = t => t ? new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '–';
@@ -72,6 +76,7 @@ function statusChip(el){
   if (!db) return chip(el, 'idle', booted ? 'Not connected' : 'Connecting…');
   if (s === 'live') chip(el, 'live', 'Exam is live');
   else if (s === 'ended') chip(el, 'ended', 'Exam has ended');
+  else if (s === 'open') chip(el, 'idle', 'Waiting for the exam to start');
   else chip(el, 'idle', 'Waiting for the invigilator');
 }
 let preview = false;
@@ -100,23 +105,23 @@ $('loginForm').addEventListener('submit', ev => {
 });
 
 /* ---------- security code ---------- */
-function goNext(){ (eff() === 'live' && codeOk()) ? goReady() : goCode(); }
+function goNext(){ (canJoin(eff()) && codeOk()) ? goReady() : goCode(); }
 function goCode(){
   whoLine(); show('sCode'); refreshCode();
   if (!$('fCode').disabled) $('fCode').focus();
 }
 function refreshCode(){
   if ($('sCode').hidden) return;
-  const s = eff(), live = !!db && s === 'live';
+  const s = eff(), live = !!db && canJoin(s);
   if (live && codeOk()) return goReady();
   statusChip($('cChip'));
   const wasOff = $('fCode').disabled;
   $('fCode').disabled = !live; $('codeBtn').disabled = !live;
-  $('fCodeHelp').textContent = !db ? 'Cannot reach the exam server right now.'
-    : preview ? 'Test mode: type the demo code ' + $('pvCode').textContent + ' (shown in the purple bar), or the code of the live exam.'
+  $('fCodeHelp').textContent = !db ? 'Can\'t connect right now. Check your internet.'
+    : preview ? 'Preview: type the practice code ' + $('pvCode').textContent + ' (shown in the purple bar at the top).'
     : live ? 'Letters and numbers. Capitals or small letters both work.'
     : s === 'ended' ? 'This exam has ended. Ask the invigilator what to do next.'
-    : 'Keep this page open. The code box unlocks when the invigilator opens the exam.';
+    : 'Keep this page open. The code box unlocks when the invigilator sets up the exam.';
   if (live && wasOff) $('fCode').focus();
 }
 $('fCode').addEventListener('input', () => {
@@ -126,7 +131,7 @@ $('fCode').addEventListener('input', () => {
 });
 $('codeForm').addEventListener('submit', async ev => {
   ev.preventDefault();
-  if (eff() !== 'live' || !sess) return;
+  if (!canJoin(eff()) || !sess) return;
   const wait = Math.ceil((codeLockUntil - Date.now()) / 1000);
   if (wait > 0) { fieldErr('fCode', 'Too many wrong tries. Wait ' + wait + ' seconds, then check the code with the invigilator.'); return; }
   const v = $('fCode').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -161,17 +166,18 @@ function goReady(){
 }
 function refreshReady(){
   if ($('sReady').hidden) return;
-  if (db && eff() === 'live' && !codeOk()) return goCode();
+  if (db && canJoin(eff()) && !codeOk()) return goCode();
   const s = eff(), left = (exam.endsAt || 0) - Date.now();
   statusChip($('rChip'));
   $('beginBtn').disabled = !(db && s === 'live' && N);
   $('rWin').textContent = s === 'live' ? mmss(left) : '–';
   $('rLate').hidden = !(s === 'live' && left < N * SEC * 1000);
-  $('rWait').textContent = !db ? 'Cannot reach the exam server right now.'
+  $('rWait').textContent = !db ? 'Can\'t connect right now. Check your internet.'
     : s === 'live' && !N ? 'The exam is open. Loading the questions…'
     : s === 'live' ? 'The exam is open. Your first question starts as soon as you press Start.'
     : s === 'ended' ? 'This exam has ended. Ask the invigilator what to do next.'
-    : 'Keep this page open. The Start button unlocks when the invigilator opens the exam.';
+    : s === 'open' ? 'You\'re in. Keep this page open: the Start button unlocks as soon as the invigilator starts the exam.'
+    : 'Keep this page open. The Start button unlocks when the invigilator starts the exam.';
 }
 $('backBtn').onclick = () => {
   if (sess){ $('fName').value = sess.name; $('fPhone').value = sess.phone; $('fPos').value = sess.pos; }
@@ -206,12 +212,12 @@ function write(status){
 }
 function paintSave(){
   $('saveBanner').hidden = !saveFailed;
-  $('qSaved').textContent = preview ? 'Test mode: not saved' : !saveFailed && lastSaved ? 'Answers saved' : '';
+  $('qSaved').textContent = preview ? 'Preview: not saved' : !saveFailed && lastSaved ? 'Answers saved' : '';
   if ($('sDone').hidden) return;
   const el = $('dSave'), fs = finalSaved;
   el.className = 'savestate ' + (fs === true ? 'ok' : fs === false ? 'bad' : 'wait');
-  el.textContent = preview ? 'Test mode: nothing was saved or added to the mark list.' : fs === true ? 'Saved on the exam server. You can close this page.'
-    : fs === false ? 'Your answers did not reach the server. Check your internet and try again. If it still fails, show this screen to the invigilator before you leave.'
+  el.textContent = preview ? 'Preview: nothing was saved.' : fs === true ? 'Your answers are saved. You can close this page.'
+    : fs === false ? 'Your answers were not saved. Check your internet and try again. If it still fails, show this screen to the invigilator before you leave.'
     : 'Saving your answers…';
   $('dTick').className = 'bigtick' + (fs === true ? '' : ' wait');
   $('retryBtn').hidden = fs !== false;
@@ -280,11 +286,11 @@ function finish(closed){
   show('sDone');
   const answered = sess.answers.filter(x => x >= 0).length;
   $('dTitle').textContent = closed ? 'Time is up' : 'Test submitted';
-  $('dMsg').textContent = (closed ? 'The exam window closed, so your answers so far were submitted. ' : 'Thank you. ')
+  $('dMsg').textContent = (closed ? 'Time is up, so the answers you gave have been saved. ' : 'Thank you. ')
     + 'You answered ' + answered + ' of ' + N + ' questions. The invigilator will share the results.';
   const pv = $('dScore'); pv.hidden = !preview;
   if (preview){ const sc = scoreOf({answers: sess.answers}), lc = lvCount();
-    pv.textContent = sc ? 'Test score: ' + sc.t + ' / ' + N + ' (' + Math.round(sc.t / N * 100) + '%) · Easy ' + sc.e + '/' + lc.e + ' · Medium ' + sc.m + '/' + lc.m + ' · Hard ' + sc.h + '/' + lc.h + '. Staff don\'t see their score; it shows here only in test mode.' : 'No answer key saved for this assessment, so no test score can be shown.'; }
+    pv.textContent = sc ? 'Your score in this preview: ' + sc.t + ' / ' + N + ' (' + Math.round(sc.t / N * 100) + '%) · Easy ' + sc.e + '/' + lc.e + ' · Medium ' + sc.m + '/' + lc.m + ' · Hard ' + sc.h + '/' + lc.h + '. Staff never see their score; it only shows here in the preview.' : 'The correct answers are not saved yet, so no score can be shown.'; }
   paintSave();
   say($('dTitle').textContent);
 }
@@ -321,7 +327,7 @@ const scoreOf = r => {
   return o;
 };
 function rowsForExam(){
-  const cur = results.filter(r => exam.startedAt && (r.track || 'pharmacist') === TR && r.examId === String(exam.startedAt));
+  const id = marksId(exam), cur = results.filter(r => id && (r.track || 'pharmacist') === TR && r.examId === id);
   const byPhone = {};
   cur.sort((a,b) => (a.startedAt||0) - (b.startedAt||0)).forEach(r => { (byPhone[r.phone] = byPhone[r.phone] || []).push(r); });
   return Object.values(byPhone).map(list => Object.assign({extra:list.length-1, sc:scoreOf(list[0])}, list[0]));
@@ -334,12 +340,13 @@ function paintAdmin(){
   if (!isAdmin || $('sAdmin').hidden) return;
   const s = eff(), live = s === 'live', all = rank(rowsForExam());
   statusChip($('aChip'));
-  $('aIdle').hidden = live; $('aLiveRow').hidden = !live;
+  $('aIdle').hidden = live; $('aLiveRow').hidden = !canJoin(s); $('aEndWrap').hidden = !live;
+  if (!preview && (exam.status === 'idle' || exam.status === 'ended')) prepareExam();
   if (!live) endArmed = false;
   $('aEnd').hidden = endArmed; $('aEndBox').hidden = !endArmed;
-  $('aStart').textContent = s === 'idle' ? 'Start exam' : 'Start a new exam';
+  $('aStart').textContent = 'Start exam';
   $('aStart').disabled = false; { const why = startBlock(); $('aNoQs').textContent = why ? 'Start exam is blocked. ' + why : ''; $('aNoQs').hidden = !why || s === 'live'; } $('aTry').disabled = !N;
-  const lc = lvCount(); $('thS').textContent = 'Score /' + N; $('thE').textContent = 'Easy /' + lc.e; $('thM').textContent = 'Med /' + lc.m; $('thH').textContent = 'Hard /' + lc.h;
+  const lc = lvCount(); $('thS').textContent = 'Score /' + N; $('thE').textContent = 'Easy /' + lc.e; $('thM').textContent = 'Medium /' + lc.m; $('thH').textContent = 'Hard /' + lc.h;
   const done = all.filter(r => r.status === 'submitted').length, prog = all.length - done;
   $('aEndText').textContent = prog
     ? 'End the exam now? ' + prog + ' ' + (prog > 1 ? T.many + ' are' : T.one + ' is') + ' still taking the test. Their answers so far will be submitted.'
@@ -348,7 +355,7 @@ function paintAdmin(){
   $('aStats').innerHTML = [['Started',all.length,T.many,''],['In progress',prog,'taking the test','t-brand'],['Submitted',done,'finished','t-green'],['Average',avg,scored.length ? 'out of ' + N : 'no scores yet','']]
     .map(([l,v,u,c]) => '<div class="stat '+c+'"><span class="sl">'+l+'</span><b>'+v+'</b><span class="su">'+u+'</span></div>').join('');
   $('aKeyWarn').hidden = !!key || !N || !$('aNoQs').hidden;
-  $('aKeyNote').textContent = key ? 'Scores are worked out on this screen from the stored answer key. Staff never see the key or their marks.' : '';
+  $('aKeyNote').textContent = key ? 'Marks are worked out automatically. Staff never see the correct answers or their marks.' : '';
   $('cAll').textContent = all.length; $('cRun').textContent = prog; $('cSub').textContent = done;
   document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === fSt)));
   const q = fTxt.trim().toLowerCase(), qd = q.replace(/\D/g,'');
@@ -365,29 +372,47 @@ function paintAdmin(){
     $('aBody').innerHTML = rows.map(({r, i}) => {
       const sc = r.sc, p = sc ? Math.round(sc.t/N*100) : null, cls = p === null ? '' : p >= 70 ? 'hi' : p >= 50 ? 'mid' : 'lo';
       const st = r.status === 'submitted' ? '<span class="tag sub">Submitted</span>' : '<span class="tag run">On Q' + Math.min(N, (r.i||0)+1) + ' of ' + N + '</span>';
-      return '<tr><td><span class="rk">' + (i+1) + '</span><b>' + esc(r.name) + '</b>' + (r.extra ? '<span class="tag re" title="Only the first attempt is counted">+' + r.extra + ' re-attempt</span>' : '') + '</td><td>' + esc(r.phone) + '</td><td>' + esc(r.position) + '</td><td class="num"><b>' + (sc ? sc.t : '–') + '</b></td><td class="num">' + (p === null ? '–' : '<span class="pct ' + cls + '">' + p + '%</span>') + '</td><td class="num">' + (sc ? sc.e : '–') + '</td><td class="num">' + (sc ? sc.m : '–') + '</td><td class="num">' + (sc ? sc.h : '–') + '</td><td class="num">' + (r.away ? '<span class="tag re" style="margin:0">' + r.away + '×</span>' : '0') + '</td><td>' + st + '</td></tr>';
+      return '<tr><td><span class="rk">' + (i+1) + '</span><b>' + esc(r.name) + '</b>' + (r.extra ? '<span class="tag re" title="Only the first try counts">+' + r.extra + ' more tries</span>' : '') + '</td><td>' + esc(r.phone) + '</td><td>' + esc(r.position) + '</td><td class="num"><b>' + (sc ? sc.t : '–') + '</b></td><td class="num">' + (p === null ? '–' : '<span class="pct ' + cls + '">' + p + '%</span>') + '</td><td class="num">' + (sc ? sc.e : '–') + '</td><td class="num">' + (sc ? sc.m : '–') + '</td><td class="num">' + (sc ? sc.h : '–') + '</td><td class="num">' + (r.away ? '<span class="tag re" style="margin:0">' + r.away + '×</span>' : '0') + '</td><td>' + st + '</td></tr>';
     }).join('');
   }
   $('aCode').textContent = secCode && secCode.examId === String(exam.startedAt) ? secCode.code : '------';
   const nTr = results.filter(r => (r.track || 'pharmacist') === TR).length;
-  $('aClearText').textContent = 'Delete all ' + nTr + ' stored attempt' + (nTr === 1 ? '' : 's') + ' of the ' + T.name + ', from every exam? Download the CSV first if you need the marks. This cannot be undone.';
+  $('aClearText').textContent = 'Delete all ' + nTr + ' saved result' + (nTr === 1 ? '' : 's') + ' of the ' + T.name + ', from every exam? Download the mark list first if you need it. This cannot be undone.';
   paintAdminTimes();
 }
 function paintAdminTimes(){
   if (!isAdmin || $('sAdmin').hidden) return; const s = eff();
-  if (s === 'live'){ $('aBig').textContent = mmss(exam.endsAt - Date.now()) + ' left'; $('aTimes').textContent = 'Opened at ' + fmtT(exam.startedAt) + ' · closes at ' + fmtT(exam.endsAt); }
+  if (s === 'live'){ $('aBig').textContent = mmss(exam.endsAt - Date.now()) + ' left'; $('aTimes').textContent = 'Started at ' + fmtT(exam.liveAt || exam.startedAt) + ' · closes at ' + fmtT(exam.endsAt); }
+  else if (s === 'open'){ $('aBig').textContent = 'Ready to start'; $('aTimes').textContent = 'The security code is ready. Share the exam link and the code now: staff can join and wait. Press Start exam when everyone is in.' + (exam.lastId ? ' The marks below are from the last exam.' : ''); }
   else if (exam.startedAt){ $('aBig').textContent = 'Exam closed'; $('aTimes').textContent = 'Last exam opened at ' + fmtT(exam.startedAt) + ' and closed at ' + fmtT(exam.endedAt || exam.endsAt) + '. Its marks stay below until you start a new exam.'; }
-  else { $('aBig').textContent = 'Not started'; $('aTimes').textContent = (N ? 'Set the window and press Start exam. Staff who have the exam link open can start straight away.' : 'Add questions to this assessment before starting an exam.'); }
+  else { $('aBig').textContent = 'Not started'; $('aTimes').textContent = (N ? 'Choose how long the exam stays open and press Start exam. Staff with the exam link can begin straight away.' : 'Add questions to this assessment before starting an exam.'); }
   if (exam.status === 'live' && s === 'ended' && !paintAdminTimes.closing){ paintAdminTimes.closing = true; db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt: exam.endsAt})).finally(() => paintAdminTimes.closing = false); }
 }
 $('aMins').addEventListener('input', () => { const v = +$('aMins').value; $('aMinsWarn').hidden = !(v && v < needMin()); });
 // why the exam can't start yet ('' when it can): needs uploaded questions and a matching answer key
 function startBlock(){
-  if (!T.uploaded || !N) return 'No questions have been uploaded for the ' + T.name + '. Upload the questions CSV in "Questions and answer key" below, then start the exam.';
+  if (!T.uploaded || !N) return 'No questions have been uploaded for the ' + T.name + '. Add the questions in the Questions section below, then start the exam.';
   const a = key && key.answers;
-  if (!Array.isArray(a) || !a.length) return 'The answer key is missing. Upload the questions CSV again so the key is saved, then start the exam.';
-  if (a.length !== N || a.some((x, i) => !(x >= 0 && x < QS[i].o.length))) return 'The answer key does not match the ' + N + ' questions. Upload the questions CSV again, then start the exam.';
+  if (!Array.isArray(a) || !a.length) return 'The correct answers are missing. Add the questions again in the Questions section below, then start the exam.';
+  if (a.length !== N || a.some((x, i) => !(x >= 0 && x < QS[i].o.length))) return 'The correct answers don\'t match the ' + N + ' questions. Add the questions again in the Questions section below, then start the exam.';
   return '';
+}
+// set up the next exam with its security code as soon as questions are ready, so the code can be shared
+// before the start; staff can join and wait, and only Start exam opens the questions
+let preparing = null;
+function prepareExam(force){
+  if (preparing) return preparing;
+  if (!force && (!isAdmin || startBlock() || !(exam.status === 'idle' || exam.status === 'ended'))) return Promise.resolve();
+  const prev = exam, t = Date.now(), code = newCode();
+  let done; preparing = new Promise(r => done = r);   // claim the slot before any write, so a repaint can't start a second one
+  (async () => {
+    await db.doc(T.code).set({code, examId:String(t)});
+    const e = {status:'open', startedAt:t, codeHash: await hashCode(code, String(t))};
+    if (prev.startedAt && prev.status !== 'open') e.lastId = String(prev.startedAt);
+    await db.doc(T.state).set(e);
+    secCode = codes[TR] = {code, examId:String(t)};
+  })().then(() => done(), e => { $('aErr').textContent = 'Could not set up the next exam: ' + errText(e) + '. Reload the page to try again.'; done(); }).finally(() => { preparing = null; });
+  return preparing;
 }
 $('aStart').onclick = async () => {
   $('aErr').textContent = '';
@@ -401,7 +426,12 @@ $('aStart').onclick = async () => {
   if (why){ $('aErr').textContent = 'Exam not started. ' + why; paintAdmin(); return; }
   const m = Math.min(180, Math.max(5, +$('aMins').value || 35)), t = Date.now();
   $('aMins').value = m; $('aErr').textContent = ''; $('aStart').disabled = true;
-  try { const code = newCode(); await db.doc(T.code).set({code, examId:String(t)}); await db.doc(T.state).set({status:'live', startedAt:t, endsAt:t+m*60000, windowMin:m, codeHash: await hashCode(code, String(t))}); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; msg('Exam opened for ' + m + ' minutes. It closes at ' + fmtT(t+m*60000) + '. Security code: ' + code + '. Share the exam link and the code with the ' + T.many + '.'); }
+  try {
+    if (exam.status !== 'open' || !exam.codeHash || !secCode || secCode.examId !== String(exam.startedAt)) await prepareExam(true);
+    const e = Object.assign({}, exam, {status:'live', liveAt:t, endsAt:t+m*60000, windowMin:m}); delete e.lastId;
+    await db.doc(T.state).set(e); fSt = 'all'; fTxt = ''; $('aSearch').value = '';
+    msg('Exam started. It closes at ' + fmtT(t+m*60000) + '. Staff who are waiting can now begin answering. Security code: ' + (secCode ? secCode.code : '') + '.');
+  }
   catch(e){ $('aErr').textContent = 'Could not start the exam: ' + errText(e) + '. Check your connection and press Start exam again.'; }
   $('aStart').disabled = false;
 };
@@ -409,12 +439,12 @@ $('aEnd').onclick = () => { endArmed = true; paintAdmin(); $('aEndNo').focus(); 
 $('aEndNo').onclick = () => { endArmed = false; paintAdmin(); $('aEnd').focus(); };
 $('aEndYes').onclick = async () => {
   $('aEndYes').disabled = true;
-  try { await db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt:Date.now()})); endArmed = false; msg('Exam ended at ' + fmtT(Date.now()) + '. Anyone still taking the test was submitted with their answers so far.'); }
+  try { await db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt:Date.now()})); endArmed = false; msg('Exam ended at ' + fmtT(Date.now()) + '. Anyone still answering has had their answers saved as they were.'); }
   catch(e){ $('aErr').textContent = 'Could not end the exam: ' + errText(e) + '. Try again.'; }
   $('aEndYes').disabled = false; paintAdmin();
 };
 $('aClear').onclick = () => {
-  if (!results.some(r => (r.track || 'pharmacist') === TR)){ msg('There are no stored results to clear for this assessment.'); return; }
+  if (!results.some(r => (r.track || 'pharmacist') === TR)){ msg('There are no saved results to clear for this assessment.'); return; }
   $('aClearBox').hidden = false; paintAdmin(); $('aClearNo').focus();
 };
 $('aClearNo').onclick = () => { $('aClearBox').hidden = true; $('aClear').focus(); };
@@ -430,8 +460,10 @@ document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { fSt = 
 $('aSearch').addEventListener('input', () => { fTxt = $('aSearch').value; paintAdmin(); });
 $('aBody').addEventListener('click', ev => { if (ev.target.closest('[data-clear]')){ fSt = 'all'; fTxt = ''; $('aSearch').value = ''; paintAdmin(); $('aSearch').focus(); } });
 const libs = {};
-function loadLib(src){ return libs[src] || (libs[src] = new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => { delete libs[src]; no(new Error('load')); }; document.head.appendChild(s); })); }
-const LIB_XLSX = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+function loadLib(src){ return libs[src] || (libs[src] = new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; if (LIB_SRI[src]){ s.integrity = LIB_SRI[src]; s.crossOrigin = 'anonymous'; } s.onload = ok; s.onerror = () => { delete libs[src]; no(new Error('load')); }; document.head.appendChild(s); })); }
+// SheetJS 0.20.3 (0.18.x has known problems reading files); pinned by hash so a changed file is refused
+const LIB_XLSX = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
+const LIB_SRI = {[LIB_XLSX]: 'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT'};
 const LIB_PDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const LIB_PDFT = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
 function markData(){
@@ -505,7 +537,7 @@ $('aCodeCopy').onclick = async () => {
   catch(e){ msg('Copying is blocked here. The security code is ' + c + '.'); }
 };
 $('aCodeNew').onclick = async () => {
-  if (eff() !== 'live') return;
+  if (!canJoin(eff())) return;
   const b = $('aCodeNew'); b.disabled = true;
   try { const code = newCode(), id = String(exam.startedAt); await db.doc(T.code).set({code, examId:id}); await db.doc(T.state).set(Object.assign({}, exam, {codeHash: await hashCode(code, id)})); msg('New security code: ' + code + '. The old code no longer works. Anyone already taking the test carries on.'); }
   catch(e){ $('aErr').textContent = 'Could not make a new code: ' + errText(e) + '. Try again.'; }
@@ -522,7 +554,7 @@ function applyTrackText(){
   $('fPos').innerHTML = '<option value="">Select your position</option>' + T.positions.map(p => '<option>' + esc(p) + '</option>').join('');
   $('lBlurb').textContent = N ? N + ' questions, ' + SEC + ' seconds each. Fill in your details to join. About ' + needMin() + ' minutes in all.' : 'This assessment is not open yet.';
   $('rN').textContent = N;
-  $('aNeed').textContent = N ? 'Each person needs ' + (N * SEC / 60).toFixed(1).replace('.0','') + ' minutes of question time (' + N + ' × ' + SEC + ' s). Set the window a few minutes longer so late joiners can finish.' : 'This assessment has no questions yet.';
+  $('aNeed').textContent = N ? 'Each person needs about ' + Math.ceil(N * SEC / 60) + ' minutes to answer all ' + N + ' questions (' + SEC + ' seconds each). Keep the exam open a few minutes longer so anyone who joins late can still finish.' : 'This assessment has no questions yet.';
   $('aMinsWarn').textContent = 'Under ' + needMin() + ' minutes, anyone who joins late will be cut off before the last question.';
   $('aMinsWarn').hidden = !(+$('aMins').value < needMin());
   const link = BASE_URL + '#' + TR;
@@ -531,7 +563,7 @@ function applyTrackText(){
 }
 function homeLine(tr){
   const st = states[tr] || {status:'idle'}, live = st.status === 'live' && Date.now() < st.endsAt;
-  const rs = results.filter(r => (r.track || 'pharmacist') === tr && st.startedAt && r.examId === String(st.startedAt));
+  const id = marksId(st), rs = results.filter(r => (r.track || 'pharmacist') === tr && id && r.examId === id);
   const ph = new Set(rs.map(r => r.phone)).size, sub = new Set(rs.filter(r => r.status === 'submitted').map(r => r.phone)).size;
   return {st, live, ph, sub};
 }
@@ -539,8 +571,8 @@ function paintHome(){
   if (!isAdmin || $('sHome').hidden) return;
   $('hCards').innerHTML = Object.keys(TRACKS).map(tr => {
     const t = TRACKS[tr], h = homeLine(tr), n = t.qs.length;
-    const chipC = h.live ? 'live' : h.st.startedAt ? 'ended' : 'idle', chipT = h.live ? 'Exam is live' : h.st.startedAt ? 'Exam closed' : 'Not started';
-    const when = h.live ? '<span><b data-left="' + tr + '">' + mmss(h.st.endsAt - Date.now()) + '</b> left</span>' : h.st.startedAt ? '<span>Last exam ' + fmtT(h.st.startedAt) + '</span>' : '';
+    const open = h.st.status === 'open', chipC = h.live ? 'live' : open ? 'idle' : h.st.startedAt ? 'ended' : 'idle', chipT = h.live ? 'Exam is live' : open ? 'Ready to start' : h.st.startedAt ? 'Exam closed' : 'Not started';
+    const when = open ? '<span>Code ready, waiting to start</span>' : h.live ? '<span><b data-left="' + tr + '">' + mmss(h.st.endsAt - Date.now()) + '</b> left</span>' : h.st.startedAt ? '<span>Last exam ' + fmtT(h.st.startedAt) + '</span>' : '';
     return '<div class="card hcard"><div class="row between"><h2>' + esc(t.name) + '</h2><span class="chip ' + chipC + '"><i class="dot"></i><span>' + chipT + '</span></span></div>'
       + '<div class="hmeta"><span>' + (n ? '<b>' + n + '</b> questions' : 'No questions yet') + '</span>' + when + (h.st.startedAt ? '<span><b>' + h.ph + '</b> started</span><span><b>' + h.sub + '</b> submitted</span>' : '') + '</div>'
       + '<div><button class="btn btn-lg" type="button" data-open="' + tr + '">Open ' + esc(t.one) + ' dashboard</button></div></div>';
@@ -616,7 +648,7 @@ async function boot(){
   booted = true;
   if (!db){
     statusChip($('stChip'));
-    $('loginErr').textContent = 'Could not reach the exam server. Check your internet connection and open the link again. If it still fails, tell the invigilator.';
+    $('loginErr').textContent = 'Can\'t connect right now. Check your internet and open the link again. If it still doesn\'t work, tell the invigilator.';
     $('loginErr').hidden = false; $('loginBtn').disabled = true; return;
   }
   if (isAdmin){

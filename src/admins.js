@@ -4,7 +4,7 @@
 const MAIN_EMAILS = __MAIN_EMAILS__;   // from INVIGILATOR_EMAILS in .env (build.py)
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 let invs = [], myEmail = '', invRemove = '', invReady = false, invBlocked = '';
-const RULES_HINT = 'The Firestore rules on the server are out of date. Run python3 build.py and publish the new firestore.rules (Firebase console → Firestore → Rules → Publish), then reload this page.';
+const RULES_HINT = 'This needs a settings update on the server. Ask the person who set up this system to publish the latest database rules, then reload this page.';
 const isPerm = e => e && (e.code === 'permission-denied' || /insufficient permissions/i.test(e.message || ''));
 function invSay(err, ok){ $('admErr').textContent = err || ''; $('admOk').textContent = ok || ''; }
 // returns '' when the email can be added, otherwise the reason
@@ -39,7 +39,7 @@ $('admList').onclick = async ev => {
   if ('rmNo' in t.dataset){ invRemove = ''; paintInvs(); return; }
   if (t.dataset.rmYes){
     const e = t.dataset.rmYes; t.disabled = true; t.textContent = 'Removing…';
-    try { await db.doc('admins/' + e).delete(); invRemove = ''; invSay('', e + ' is no longer an invigilator. Their login still exists but can no longer open the invigilator view.'); }
+    try { await db.doc('admins/' + e).delete(); invRemove = ''; invSay('', e + ' is no longer an invigilator and can no longer open this page.'); }
     catch(err){ invRemove = ''; paintInvs(); invSay(isPerm(err) ? 'Could not remove ' + e + '. ' + RULES_HINT : 'Could not remove ' + e + ': ' + errText(err) + '. Try again.'); }
   }
 };
@@ -55,11 +55,11 @@ $('admForm').onsubmit = async ev => {
   try {
     const acc = await claude.use('accounts'), r = acc ? await acc.create(email) : {created: false};
     $('admEmail').value = ''; $('admName').value = '';
-    invSay('', r.created ? email + ' added. They will get an email to set their password, then sign in with ?admin on the exam link.'
-      : email + ' added. They already have a login, so they can sign in now with ?admin on the exam link.');
+    invSay('', r.created ? email + ' added. They will get an email to choose their password. Then they can sign in on the invigilator page.'
+      : email + ' added. They already have an account, so they can sign in on the invigilator page now.');
   } catch(e){
     try { await db.doc('admins/' + email).delete(); } catch(x){}
-    invSay('Could not make a login for ' + email + ': ' + errText(e) + '. Nothing was added. Check that Email/Password sign-in is enabled in Firebase, then try again.');
+    invSay('Could not create an account for ' + email + ': ' + errText(e) + '. Nothing was added. Try again, or ask the person who set up this system to check email sign-in is turned on.');
   }
   b.disabled = false; b.textContent = 'Add invigilator';
 };
