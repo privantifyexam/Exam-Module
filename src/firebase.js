@@ -52,6 +52,18 @@
     who.insertAdjacentElement('afterend', b);
   }
 
+  // invigilator accounts: made on a second Firebase app so the signed-in invigilator stays signed in.
+  // The new account gets a random password and a reset email, so nobody else ever knows its password.
+  const accounts = {create: async email => {
+    const app2 = firebase.apps.find(a => a.name === 'accounts') || firebase.initializeApp(cfg, 'accounts');
+    const pw = Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('') + 'Aa1!';
+    let created = true;
+    try { await app2.auth().createUserWithEmailAndPassword(email, pw); }
+    catch(e){ if (e.code === 'auth/email-already-in-use') created = false; else throw e; }
+    finally { try { await app2.auth().signOut(); } catch(e){} }
+    if (created) await firebase.auth().sendPasswordResetEmail(email);
+    return {created};
+  }};
   let ready = null;
   function start(){
     if (ready) return ready;
@@ -83,7 +95,8 @@
     if (n === 'downloads') return downloads;
     const s = await start();
     if (n === 'db') return s.fs;
-    if (n === 'user') return {canEdit: async () => s.admin, id: async () => s.u.uid};
+    if (n === 'user') return {canEdit: async () => s.admin, id: async () => s.u.uid, email: async () => (s.u.email || '').toLowerCase()};
+    if (n === 'accounts') return s.admin ? accounts : null;
     return null;
   }};
 })();

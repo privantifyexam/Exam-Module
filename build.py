@@ -30,7 +30,7 @@ head = ('<meta charset="utf-8">\n<meta name="viewport" content="width=device-wid
         '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
         '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">\n'
         + ''.join('<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-' + m + '-compat.js"></script>\n' for m in ('app', 'auth', 'firestore')))
-js = (S / 'firebase.js').read_text().replace('__FIREBASE_CONFIG__', fb_cfg) + (S / 'app.js').read_text().replace('__QS__', (S / 'questions_pharmacist.js').read_text()) + (S / 'questions_upload.js').read_text()
+js = (S / 'firebase.js').read_text().replace('__FIREBASE_CONFIG__', fb_cfg) + (S / 'app.js').read_text().replace('__QS__', (S / 'questions_pharmacist.js').read_text()) + (S / 'questions_upload.js').read_text() + (S / 'admins.js').read_text().replace('__MAIN_EMAILS__', json.dumps(emails))
 out = (head + '<style>\n' + tokens + (S / 'style.css').read_text() + '</style>\n'
        + (S / 'body.html').read_text().replace('__LOGO__', logo) + '<script>\n' + js + '</script>\n')
 (pathlib.Path(__file__).parent / 'dist').mkdir(exist_ok=True)

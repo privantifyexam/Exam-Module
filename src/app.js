@@ -621,6 +621,7 @@ async function boot(){
       db.doc(TRACKS[tr].code).onSnapshot(s => { codes[tr] = s.exists ? s.data() : null; if (tr === TR) secCode = codes[tr]; paintAdmin(); });
     });
     db.collection('results').onSnapshot(s => { resDocs = s.docs.map(d => d.id); results = []; Object.keys(rawDocs).forEach(k => delete rawDocs[k]); s.docs.forEach(d => { const o = d.data(); rawDocs[d.id] = o; Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0) results.push(Object.assign({_id:k}, o[k])); }); }); paintAdmin(); paintHome(); });
+    if (typeof startAdmins === 'function') startAdmins();
   } else db.doc(T.state).onSnapshot(onExam, () => {});
   if (!isAdmin) setTimeout(() => { if (!firstState){ firstState = true; resume(); } }, 3000);
 }

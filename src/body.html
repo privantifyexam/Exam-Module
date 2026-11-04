@@ -171,6 +171,19 @@
 <section id="sHome" hidden>
   <div class="admin-head"><div class="stack s8"><span class="eyebrow">Invigilator</span><h1>Assessments</h1><p class="muted">Each assessment has its own exam link, timer, security code and mark list.</p></div></div>
   <div class="homegrid" id="hCards"></div>
+  <div class="card stack" style="margin-top:16px" id="admCard">
+    <div class="row between"><h2>Invigilators <span class="muted small" id="admCount"></span></h2></div>
+    <p class="help">Invigilators can run exams, see marks, upload questions and manage this list. A new invigilator gets an email to set their own password. Main accounts are set in the project's .env file and can't be removed here.</p>
+    <p class="notice warn" id="admBlock" role="alert" hidden></p>
+    <form class="row" id="admForm" novalidate>
+      <div class="field grow"><label class="sr-only" for="admEmail">Invigilator's email</label><input class="input" id="admEmail" type="email" placeholder="Invigilator's email" autocomplete="off"></div>
+      <div class="field grow"><label class="sr-only" for="admName">Name (optional)</label><input class="input" id="admName" type="text" maxlength="60" placeholder="Name (optional)" autocomplete="off"></div>
+      <button class="btn" type="submit" id="admAdd">Add invigilator</button>
+    </form>
+    <p class="err" id="admErr" role="alert"></p>
+    <p class="help" id="admOk" role="status"></p>
+    <ul class="admlist" id="admList"></ul>
+  </div>
 </section>
 
 <!-- INVIGILATOR -->

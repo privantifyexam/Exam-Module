@@ -1,21 +1,28 @@
 rules_version = '2';
-// SugarCARE Exam Module. An invigilator is an email/password account listed in invigilatorEmails(),
-// or any account with a document admins/<uid> (added in the Firebase console).
+// SugarCARE Exam Module. One role: invigilator. An invigilator is an email/password account that is a
+// main account (INVIGILATOR_EMAILS in .env) or is listed as admins/<email> (added on the Invigilators card).
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function invigilatorEmails() { return __INVIGILATOR_EMAILS__; }
+    function myEmail() { return request.auth.token.email; }
+    function isPasswordUser() { return signedIn() && request.auth.token.firebase.sign_in_provider == 'password'; }
+    function isMainAccount() { return isPasswordUser() && myEmail() in invigilatorEmails(); }
     function isAdmin() {
-      return signedIn() && (
-        (request.auth.token.firebase.sign_in_provider == 'password'
-          && request.auth.token.email in invigilatorEmails())
-        || exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+      return isMainAccount() || (isPasswordUser() && exists(/databases/$(database)/documents/admins/$(myEmail())));
     }
 
-    // invigilator list: each person may only check their own entry
-    match /admins/{uid} {
-      allow read: if signedIn() && request.auth.uid == uid;
-      allow write: if false;
+    // invigilator list, one document per lower-case email. Invigilators see and manage it; nobody can
+    // add or remove themselves, and main accounts (from .env) are not stored here so can't be removed.
+    match /admins/{email} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && email != myEmail() && email == email.lower()
+        && !(email in invigilatorEmails())
+        && request.resource.data.keys().hasOnly(['email', 'name', 'addedBy', 'addedAt'])
+        && request.resource.data.email == email
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60;
+      allow delete: if isAdmin() && email != myEmail();
+      allow update: if false;
     }
     // exam state (status, times, security code hash): staff read, invigilator writes
     match /exam/{doc} {
