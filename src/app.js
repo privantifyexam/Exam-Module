@@ -169,22 +169,24 @@ function refreshReady(){
   if (db && canJoin(eff()) && !codeOk()) return goCode();
   const s = eff(), left = (exam.endsAt || 0) - Date.now();
   statusChip($('rChip'));
-  $('beginBtn').disabled = !(db && s === 'live' && N);
+  $('rN').textContent = N || exam.count || '–';
+  if (db && s === 'live' && N) return beginTest();
   $('rWin').textContent = s === 'live' ? mmss(left) : '–';
   $('rLate').hidden = !(s === 'live' && left < N * SEC * 1000);
   $('rWait').textContent = !db ? 'Can\'t connect right now. Check your internet.'
-    : s === 'live' && !N ? 'The exam is open. Loading the questions…'
-    : s === 'live' ? 'The exam is open. Your first question starts as soon as you press Start.'
+    : s === 'live' ? 'The exam has started. Loading your first question…'
     : s === 'ended' ? 'This exam has ended. Ask the invigilator what to do next.'
-    : s === 'open' ? 'You\'re in. Keep this page open: the Start button unlocks as soon as the invigilator starts the exam.'
-    : 'Keep this page open. The Start button unlocks when the invigilator starts the exam.';
+    : s === 'open' ? 'You\'re in. Keep this page open: your test starts by itself as soon as the invigilator starts the exam.'
+    : 'Keep this page open. Your test starts by itself when the invigilator starts the exam.';
 }
 $('backBtn').onclick = () => {
   if (sess){ $('fName').value = sess.name; $('fPhone').value = sess.phone; $('fPos').value = sess.pos; }
   sess = null; lsSet(null); whoLine(); show('sLogin'); $('fName').focus();
 };
-$('beginBtn').onclick = () => {
-  if (eff() !== 'live' || !N) return;
+// the test starts by itself for everyone waiting as soon as the invigilator starts the exam
+// (and straight away for anyone who joins while it is already running)
+function beginTest(){
+  if (!sess || sess.started || eff() !== 'live' || !N || $('sReady').hidden) return;
   if (!codeOk()) return goCode();
   sess = Object.assign(sess, {started:true, done:false, examId:String(exam.startedAt), pid:'', i:0, answers:Array(N).fill(-1), sel:-1, away:0, order:makeOrder(), opt:QS.map(q => shuf(q.o.map((_,k) => k))), qStart:Date.now(), t0:Date.now()});
   sess.pid = sess.examId + '_' + sess.phone + '_' + Math.random().toString(36).slice(2,6);
@@ -407,7 +409,7 @@ function prepareExam(force){
   let done; preparing = new Promise(r => done = r);   // claim the slot before any write, so a repaint can't start a second one
   (async () => {
     await db.doc(T.code).set({code, examId:String(t)});
-    const e = {status:'open', startedAt:t, codeHash: await hashCode(code, String(t))};
+    const e = {status:'open', startedAt:t, codeHash: await hashCode(code, String(t)), count:N};
     if (prev.startedAt && prev.status !== 'open') e.lastId = String(prev.startedAt);
     await db.doc(T.state).set(e);
     secCode = codes[TR] = {code, examId:String(t)};
@@ -428,7 +430,7 @@ $('aStart').onclick = async () => {
   $('aMins').value = m; $('aErr').textContent = ''; $('aStart').disabled = true;
   try {
     if (exam.status !== 'open' || !exam.codeHash || !secCode || secCode.examId !== String(exam.startedAt)) await prepareExam(true);
-    const e = Object.assign({}, exam, {status:'live', liveAt:t, endsAt:t+m*60000, windowMin:m}); delete e.lastId;
+    const e = Object.assign({}, exam, {status:'live', liveAt:t, endsAt:t+m*60000, windowMin:m, count:N}); delete e.lastId;
     await db.doc(T.state).set(e); fSt = 'all'; fTxt = ''; $('aSearch').value = '';
     msg('Exam started. It closes at ' + fmtT(t+m*60000) + '. Staff who are waiting can now begin answering. Security code: ' + (secCode ? secCode.code : '') + '.');
   }
@@ -553,7 +555,7 @@ function applyTrackText(){
   $('topName').textContent = T.name; $('aTitle').textContent = T.name;
   $('fPos').innerHTML = '<option value="">Select your position</option>' + T.positions.map(p => '<option>' + esc(p) + '</option>').join('');
   $('lBlurb').textContent = N ? N + ' questions, ' + SEC + ' seconds each. Fill in your details to join. About ' + needMin() + ' minutes in all.' : 'This assessment is not open yet.';
-  $('rN').textContent = N;
+  $('rN').textContent = N || exam.count || '–';
   $('aNeed').textContent = N ? 'Each person needs about ' + Math.ceil(N * SEC / 60) + ' minutes to answer all ' + N + ' questions (' + SEC + ' seconds each). Keep the exam open a few minutes longer so anyone who joins late can still finish.' : 'This assessment has no questions yet.';
   $('aMinsWarn').textContent = 'Under ' + needMin() + ' minutes, anyone who joins late will be cut off before the last question.';
   $('aMinsWarn').hidden = !(+$('aMins').value < needMin());
@@ -584,7 +586,7 @@ function route(){
   if (!isAdmin) return;
   const h = (location.hash || '').slice(1);
   if (TRACKS[h]){
-    useTrack(h); applyTrackText(); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = ''; if (typeof paintQList === 'function') paintQList();
+    useTrack(h); applyTrackText(); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = ''; if (typeof qRepaint === 'function') qRepaint();
     $('who').textContent = 'Invigilator · ' + T.name; show('sAdmin'); paintAdmin(); $('aHome').focus();
   } else { $('who').textContent = 'Invigilator view'; $('topName').textContent = 'All assessments'; show('sHome'); paintHome(); }
 }
@@ -655,7 +657,7 @@ async function boot(){
     route();
     Object.keys(TRACKS).forEach(tr => {
       db.doc(TRACKS[tr].state).onSnapshot(s => { states[tr] = s.exists ? s.data() : {status:'idle'}; if (tr === TR && !preview) exam = states[tr]; paintAdmin(); paintHome(); }, () => {});
-      db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; paintAdmin(); if (typeof paintQList === 'function') paintQList(); });
+      db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; paintAdmin(); if (typeof qRepaint === 'function') qRepaint(); });
       db.doc(TRACKS[tr].code).onSnapshot(s => { codes[tr] = s.exists ? s.data() : null; if (tr === TR) secCode = codes[tr]; paintAdmin(); });
     });
     db.collection('results').onSnapshot(s => { resDocs = s.docs.map(d => d.id); results = []; Object.keys(rawDocs).forEach(k => delete rawDocs[k]); s.docs.forEach(d => { const o = d.data(); rawDocs[d.id] = o; Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0) results.push(Object.assign({_id:k}, o[k])); }); }); paintAdmin(); paintHome(); });

@@ -207,3 +207,13 @@ body.dlg-open{overflow:hidden}
 .pw-t{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:36px;padding:0 12px;border:0;border-radius:var(--r-sm);background:transparent;color:var(--brand-fg);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .pw-t:hover{background:var(--tint-brand-lift)}
 .pw-t:focus-visible{outline:2px solid var(--brand-fg);outline-offset:1px}
+.qlist .qact{display:flex;gap:6px;margin-left:auto}
+.qlist .qconf{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;padding:10px 12px;border-radius:var(--r-sm);background:var(--field-abn-bg)}
+.qform{display:flex;flex-direction:column;gap:12px}
+.qform textarea.input{min-height:72px;resize:vertical;font:inherit}
+.qform .qopt{display:flex;align-items:center;gap:8px}
+.qform .qopt b{min-width:18px}
+.qform .qopt .input{flex:1;min-height:42px}
+.qform .qopt label.qok{display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;cursor:pointer}
+.qform .qopt input[type=radio]{width:18px;height:18px;accent-color:var(--sc-purple)}
+.qform select.input{max-width:200px}

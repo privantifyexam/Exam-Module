@@ -1,6 +1,6 @@
 /* ---------- questions and answer key (CSV upload, invigilator only) ---------- */
-const Q_COLS = ['level', 'question', 'option_a', 'option_b', 'option_c', 'option_d', 'option_e', 'option_f', 'answer'];
-const Q_LETTERS = 'ABCDEF';
+const Q_COLS = ['level', 'question', 'option_a', 'option_b', 'option_c', 'option_d', 'answer'];
+const Q_LETTERS = 'ABCD';   // each question has 2 to 4 choices
 // RFC 4180 CSV: quoted fields may hold commas, quotes ("") and line breaks
 function parseCsv(text){
   const rows = []; let row = [], f = '', q = false;
@@ -32,7 +32,9 @@ function readQuestions(rows){
     const line = k + 2, get = c => at[c] >= 0 ? String(r[at[c]] || '').trim().replace(/^'(?=[=+\-@])/, '') : '';
     const lv = get('level').toLowerCase(), level = LV.find(l => l.toLowerCase() === lv);
     const q = get('question');
-    const opts = ['a','b','c','d','e','f'].map(x => get('option_' + x));
+    const opts = ['a','b','c','d'].map(x => get('option_' + x));
+    // older files may still have option_e / option_f columns: refuse filled ones rather than drop them silently
+    const extra = ['option_e', 'option_f'].filter(c => head.indexOf(c) >= 0 && String(r[head.indexOf(c)] || '').trim());
     const last = opts.reduce((m, o, i) => o ? i : m, -1), o = opts.slice(0, last + 1);
     const ans = get('answer').toUpperCase(), ai = Q_LETTERS.indexOf(ans);
     const bad = [];
@@ -40,7 +42,8 @@ function readQuestions(rows){
     if (!q) bad.push('question is empty');
     if (o.length < 2) bad.push('needs at least options A and B');
     else if (o.some(x => !x)) bad.push('options must be filled in order with no gaps (option ' + Q_LETTERS[o.indexOf('')] + ' is empty)');
-    if (ans.length !== 1 || ai < 0) bad.push('answer must be one letter A to F');
+    if (extra.length) bad.push('only choices A to D are allowed; move or remove what is in ' + extra.join(' and '));
+    if (ans.length !== 1 || ai < 0) bad.push('answer must be one letter A to D');
     else if (ai >= o.length) bad.push('answer ' + ans + ' points to an empty option');
     if (bad.length) errs.push('Row ' + line + ': ' + bad.join('; ') + '.');
     else { qs.push({l: level, q, o}); answers.push(ai); }
@@ -53,7 +56,7 @@ function paintQs(){
   if (!isAdmin) return;
   const lc = lvCount();
   $('qCount').textContent = N ? '· ' + N + ' (Easy ' + lc.e + ', Medium ' + lc.m + ', Hard ' + lc.h + ')' + (key ? '' : ' · no key') : '· none yet';
-  $('qFile').disabled = $('qClear').disabled = eff() === 'live';
+  $('qFile').disabled = eff() === 'live';
 }
 function qReset(){ $('qTpl').hidden = true; qPending = null; $('qFile').value = ''; $('qErrBox').hidden = true; $('qOkBox').hidden = true; }
 $('qFile').onchange = async () => {
@@ -85,14 +88,19 @@ $('qFile').onchange = async () => {
   $('qOkBox').hidden = false; $('qSave').focus();
 };
 $('qCancel').onclick = qReset;
+// saves the whole question list and its correct answers (same order) for this assessment
+async function saveSet(qs, answers){
+  await db.doc('questions/' + TR).set({qs, updatedAt: Date.now()});
+  await db.doc(T.key).set({answers});
+  key = keys[TR] = {answers}; setQs(TR, qs); paintAdmin(); paintQs(); qRepaint();
+  if (exam.status === 'open') await db.doc(T.state).set(Object.assign({}, exam, {count: qs.length}));   // staff see the count while waiting
+}
 $('qSave').onclick = async () => {
   if (!qPending) return;
   if (eff() === 'live'){ $('qErrT').textContent = 'End the exam before changing its questions.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; return; }
   const b = $('qSave'), r = qPending; b.disabled = true; b.textContent = 'Saving…';
   try {
-    await db.doc('questions/' + TR).set({qs: r.qs, updatedAt: Date.now()});
-    await db.doc(T.key).set({answers: r.answers});
-    setQs(TR, r.qs); qReset(); paintAdmin(); paintQs(); paintQList();
+    await saveSet(r.qs, r.answers); qReset();
     msg(r.qs.length + ' questions saved for the ' + T.name + '.');
   } catch(e){ $('qErrT').textContent = 'Could not save the questions: ' + errText(e) + '. Try again.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; }
   b.disabled = false; b.textContent = 'Save questions';
@@ -101,64 +109,97 @@ async function qDownload(filename, rows){
   try {
     await loadLib(LIB_XLSX);
     const ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [10, 60, 24, 24, 24, 24, 18, 18, 8].map(w => ({wch: w}));
+    ws['!cols'] = [10, 60, 24, 24, 24, 24, 8].map(w => ({wch: w}));
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Questions');
     const d = await claude.use('downloads'); await d.save({filename, data: XLSX.write(wb, {type: 'array', bookType: 'xlsx'})});
   } catch(e){ msg(e && e.message === 'load' ? 'Could not prepare the file. Check your internet connection and try again.' : 'The download is not available in this view.'); }
 }
 $('qTpl').onclick = () => qDownload('questions_template.xlsx', [Q_COLS,
-  ['Easy', 'Example: which of these is a fruit?', 'Carrot', 'Apple', 'Potato', 'Onion', '', '', 'B'],
-  ['Medium', 'Example: how many minutes are in 2 hours?', '60', '90', '120', '150', '', '', 'C'],
-  ['Hard', 'Example: a question with a comma, "quotes" and only three options?', 'First option', 'Second option', 'Third option', '', '', '', 'A']]);
-$('qExport').onclick = () => {
-  if (!N){ msg('There are no questions to download yet.'); return; }
-  const k = key && key.answers;
-  qDownload(TR + '_questions.xlsx', [Q_COLS].concat(QS.map((q, i) => [q.l, q.q].concat([0,1,2,3,4,5].map(j => q.o[j] || ''), [k && k[i] >= 0 ? Q_LETTERS[k[i]] : '']))));
-};
-// question viewer: every question with its options, the correct one marked from the stored key
-let qLvF = '', qOpen = false;
+  ['Easy', 'Example: which of these is a fruit?', 'Carrot', 'Apple', 'Potato', 'Onion', 'B'],
+  ['Medium', 'Example: how many minutes are in 2 hours?', '60', '90', '120', '150', 'C'],
+  ['Hard', 'Example: a question with a comma, "quotes" and only three options?', 'First option', 'Second option', 'Third option', '', 'A']]);
+// question viewer and editor: every question with its choices and the correct one marked;
+// invigilators can add, edit and delete questions here (not while an exam is running)
+let qLvF = '', qOpen = false, qEditing = null, qDelAsk = -1, qBusy = false;   // qEditing: index being edited, 'new', or null
+const Q_MAX_Q = 1000, Q_MAX_O = 300;
+const qLocked = () => eff() === 'live';
+function qForm(q, ans){
+  const opts = Q_LETTERS.split('').map((L, j) => '<div class="qopt"><b>' + L + '</b><input class="input" data-o="' + j + '" maxlength="' + Q_MAX_O + '" value="' + esc(q.o[j] || '') + '" placeholder="' + (j < 2 ? 'Choice ' + L + ' (needed)' : 'Choice ' + L + ' (optional)') + '" aria-label="Choice ' + L + '">'
+    + '<label class="qok"><input type="radio" name="qAns" value="' + j + '"' + (ans === j ? ' checked' : '') + '> Correct</label></div>').join('');
+  return '<li class="qform" data-form>'
+    + '<div class="field"><label for="qfLv">Level</label><select class="input" id="qfLv">' + LV.map(l => '<option' + (q.l === l ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></div>'
+    + '<div class="field"><label for="qfQ">Question</label><textarea class="input" id="qfQ" maxlength="' + Q_MAX_Q + '">' + esc(q.q || '') + '</textarea></div>'
+    + '<div class="field"><span class="small">Choices: fill them in order and tick the correct one</span>' + opts + '</div>'
+    + '<div class="row"><button class="btn" type="button" data-save>Save question</button><button class="btn btn-ghost" type="button" data-cancel>Cancel</button></div></li>';
+}
 function paintQList(){
   if (!qOpen) return;
-  const k = key && key.answers, s = $('qSearch').value.trim().toLowerCase();
-  const shown = QS.map((q, i) => ({q, i})).filter(({q}) => (!qLvF || q.l === qLvF) && (!s || (q.q + ' ' + q.o.join(' ')).toLowerCase().includes(s)));
-  $('qDlgT').textContent = 'Questions and answers · ' + T.name;
-  $('qListNote').textContent = !N ? 'No questions yet. Add them using the template.' : 'Showing ' + shown.length + ' of ' + N + ' questions in upload order.' + (k ? '' : ' The correct answers are not saved, so none are marked.');
-  $('qItems').innerHTML = shown.map(({q, i}) => '<li><div class="qh"><span class="qn">' + (i + 1) + '.</span><span class="qt">' + esc(q.q) + '</span><span class="lv">' + esc(q.l) + '</span></div><ul>'
-    + q.o.map((o, j) => '<li' + (k && k[i] === j ? ' class="ok"' : '') + '><b>' + Q_LETTERS[j] + '</b><span>' + esc(o) + '</span></li>').join('') + '</ul></li>').join('');
+  const k = key && key.answers, s = $('qSearch').value.trim().toLowerCase(), lock = qLocked();
+  if (lock) qEditing = null;
+  const shown = QS.map((q, i) => ({q, i})).filter(({q, i}) => i === qEditing || ((!qLvF || q.l === qLvF) && (!s || (q.q + ' ' + q.o.join(' ')).toLowerCase().includes(s))));
+  $('qDlgT').textContent = 'Questions · ' + T.name;
+  $('qLock').hidden = !lock; $('qAdd').disabled = lock || qEditing !== null;
+  $('qListNote').textContent = !N ? 'No questions yet. Press Add question, or upload an Excel file on the dashboard.' : 'Showing ' + shown.length + ' of ' + N + ' questions.' + (k ? '' : ' The correct answers are not saved, so none are marked.');
+  const card = ({q, i}) => i === qEditing ? qForm(q, k ? k[i] : -1)
+    : '<li><div class="qh"><span class="qn">' + (i + 1) + '.</span><span class="qt">' + esc(q.q) + '</span><span class="lv">' + esc(q.l) + '</span>'
+      + (lock || qEditing !== null ? '' : '<span class="qact"><button class="btn btn-sm btn-ghost" type="button" data-edit="' + i + '">Edit</button><button class="btn btn-sm btn-quiet" type="button" data-del="' + i + '">Delete</button></span>') + '</div><ul>'
+      + q.o.map((o, j) => '<li' + (k && k[i] === j ? ' class="ok"' : '') + '><b>' + Q_LETTERS[j] + '</b><span>' + esc(o) + '</span></li>').join('') + '</ul>'
+      + (qDelAsk === i ? '<div class="qconf"><span>Delete question ' + (i + 1) + '?' + (qHasResults() ? ' Saved results will be marked against the changed list.' : '') + '</span><button class="btn btn-sm btn-danger" type="button" data-del-yes="' + i + '">Delete</button><button class="btn btn-sm btn-ghost" type="button" data-del-no>Keep it</button></div>' : '') + '</li>';
+  $('qItems').innerHTML = (qEditing === 'new' ? qForm({l: 'Easy', q: '', o: []}, -1) : '') + shown.map(card).join('');
 }
-function qOpenDlg(){ qOpen = true; paintQList(); document.body.classList.add('dlg-open'); $('qDlg').showModal(); $('qSearch').focus(); }
+// repaint from outside the editor (data updates) without wiping a form someone is typing in
+function qRepaint(){ if (qEditing === null) paintQList(); }
+const qHasResults = () => results.some(r => (r.track || 'pharmacist') === TR);
+function qSay(ok, err){ $('qEdMsg').textContent = ok || ''; $('qEdMsg').hidden = !ok; $('qEdErr').textContent = err || ''; }
+// reads the open form; returns {q, ans} or {err}
+function qReadForm(){
+  const l = $('qfLv').value, text = $('qfQ').value.trim().replace(/\s+\n/g, '\n');
+  const all = [...document.querySelectorAll('#qItems [data-o]')].map(x => x.value.trim());
+  const last = all.reduce((m, o, i) => o ? i : m, -1), o = all.slice(0, last + 1);
+  const pick = document.querySelector('#qItems input[name=qAns]:checked'), ans = pick ? +pick.value : -1;
+  if (!text) return {err: 'Type the question.', focus: 'qfQ'};
+  if (o.length < 2) return {err: 'Fill in at least choices A and B.'};
+  if (o.some(x => !x)) return {err: 'Fill the choices in order with no gaps: choice ' + Q_LETTERS[o.indexOf('')] + ' is empty.'};
+  if (new Set(o.map(x => x.toLowerCase())).size !== o.length) return {err: 'Two choices are the same. Make each choice different.'};
+  if (ans < 0) return {err: 'Tick the correct choice.'};
+  if (ans >= o.length) return {err: 'The choice ticked as correct is empty.'};
+  return {q: {l, q: text, o}, ans};
+}
+async function qCommit(qs, answers, done){
+  if (qLocked()){ qSay('', 'An exam is running, so questions can\'t be changed until it ends.'); return false; }
+  qBusy = true; document.querySelectorAll('#qDlg button').forEach(b => b.disabled = true);
+  try { await saveSet(qs, answers); qSay(done); return true; }
+  catch(e){ qSay('', 'Could not save: ' + errText(e) + '. Nothing was changed; try again.'); return false; }
+  finally { qBusy = false; document.querySelectorAll('#qDlg button').forEach(b => b.disabled = false); paintQList(); }
+}
+// current answers, padded so every question has a slot (-1 = not set)
+const qAnswers = () => QS.map((_, i) => key && Array.isArray(key.answers) && key.answers[i] >= 0 ? key.answers[i] : -1);
+$('qItems').addEventListener('click', async ev => {
+  const t = ev.target.closest('button'); if (!t || qBusy) return;
+  if (t.dataset.edit){ qSay(); qDelAsk = -1; qEditing = +t.dataset.edit; paintQList(); $('qfQ').focus(); return; }
+  if (t.dataset.del){ qSay(); qDelAsk = +t.dataset.del; paintQList(); return; }
+  if ('delNo' in t.dataset){ qDelAsk = -1; paintQList(); return; }
+  if ('cancel' in t.dataset){ qEditing = null; qSay(); paintQList(); return; }
+  if (t.dataset.delYes){
+    const i = +t.dataset.delYes, qs = QS.slice(), a = qAnswers(); qs.splice(i, 1); a.splice(i, 1); qDelAsk = -1;
+    await qCommit(qs, a, 'Question ' + (i + 1) + ' deleted. ' + qs.length + ' questions left.'); return;
+  }
+  if ('save' in t.dataset){
+    const r = qReadForm(); if (r.err){ qSay('', r.err); if (r.focus) $(r.focus).focus(); return; }
+    const qs = QS.slice(), a = qAnswers(), isNew = qEditing === 'new';
+    if (isNew){ qs.push(r.q); a.push(r.ans); } else { qs[qEditing] = r.q; a[qEditing] = r.ans; }
+    const n = isNew ? qs.length : qEditing + 1;
+    if (await qCommit(qs, a, isNew ? 'Question ' + n + ' added.' : 'Question ' + n + ' saved.')) qEditing = null;
+    paintQList();
+  }
+});
+$('qAdd').onclick = () => { if (qLocked()) return; qSay(); qDelAsk = -1; qEditing = 'new'; paintQList(); $('qfQ').focus(); };
+function qOpenDlg(){ qOpen = true; qEditing = null; qDelAsk = -1; qSay(); paintQList(); document.body.classList.add('dlg-open'); $('qDlg').showModal(); $('qSearch').focus(); }
 $('qView').onclick = qOpenDlg;
 $('qClose').onclick = () => $('qDlg').close();
-$('qDlg').addEventListener('close', () => { qOpen = false; document.body.classList.remove('dlg-open'); $('qView').focus(); });
-$('qDlg').addEventListener('click', ev => { if (ev.target === $('qDlg')) $('qDlg').close(); });   // click outside the box closes it
+$('qDlg').addEventListener('cancel', ev => { if (qEditing !== null){ ev.preventDefault(); qEditing = null; qSay(); paintQList(); } });   // Esc first leaves the form
+$('qDlg').addEventListener('close', () => { qOpen = false; qEditing = null; document.body.classList.remove('dlg-open'); $('qView').focus(); });
+$('qDlg').addEventListener('click', ev => { if (ev.target === $('qDlg') && qEditing === null) $('qDlg').close(); });   // click outside closes it (not while editing)
 $('qSearch').oninput = paintQList;
 document.querySelectorAll('#qLv button').forEach(b => b.onclick = () => { qLvF = b.dataset.lv; document.querySelectorAll('#qLv button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); paintQList(); });
-// clear the question set: two steps (confirm, then type CLEAR). Saves an empty set so the built-in questions don't come back.
-let qClrStep = 0;
-function qClrPaint(){
-  $('qClrBox').hidden = !qClrStep; $('qClr2').hidden = qClrStep !== 2;
-  $('qClrT').textContent = qClrStep === 1 ? 'Clear all ' + N + ' questions and their correct answers for the ' + T.name + '? Staff won\'t be able to take this test until you add new questions. Press Download questions first if you want a copy.'
-    : 'Second check: this cannot be undone. Type CLEAR and press Clear permanently.';
-  $('qClrYes').textContent = qClrStep === 2 ? 'Clear permanently' : 'Yes, clear them';
-  $('qClrYes').disabled = qClrStep === 2 && $('qClrIn').value.trim().toUpperCase() !== 'CLEAR';
-}
-$('qClear').onclick = () => {
-  if (eff() === 'live'){ msg('End the exam before clearing its questions.'); return; }
-  if (!N && !key){ msg('There are no questions to clear.'); return; }
-  qReset(); $('qClrIn').value = ''; qClrStep = 1; qClrPaint(); $('qClrNo').focus();
-};
-$('qClrNo').onclick = () => { qClrStep = 0; qClrPaint(); $('qClear').focus(); };
-$('qClrIn').oninput = qClrPaint;
-$('qClrYes').onclick = async () => {
-  if (qClrStep === 1){ qClrStep = 2; qClrPaint(); $('qClrIn').focus(); return; }
-  if ($('qClrIn').value.trim().toUpperCase() !== 'CLEAR') return;
-  if (eff() === 'live'){ qClrStep = 0; qClrPaint(); msg('End the exam before clearing its questions.'); return; }
-  const b = $('qClrYes'); b.disabled = true; b.textContent = 'Clearing…';
-  try {
-    await db.doc('questions/' + TR).set({qs: [], clearedAt: Date.now()});
-    await db.doc(T.key).delete();
-    key = keys[TR] = null; setQs(TR, []); qClrStep = 0; qClrPaint(); paintAdmin(); paintQs(); paintQList();
-    msg('Questions cleared for the ' + T.name + '. Add new questions before starting an exam.');
-  } catch(e){ qClrStep = 0; qClrPaint(); msg('Could not clear the questions: ' + errText(e) + '. Nothing was changed; try again.'); }
-};
 setInterval(paintQs, 1000);

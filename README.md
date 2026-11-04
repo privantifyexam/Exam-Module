@@ -52,9 +52,8 @@ Invigilators upload questions on the assessment dashboard (**Questions and answe
 | --- | --- | --- |
 | `level` | yes | `Easy`, `Medium` or `Hard` |
 | `question` | yes | question text |
-| `option_a` … `option_d` | A and B yes | option text; fill in order |
-| `option_e`, `option_f` | no | extra options |
-| `answer` | yes | correct option letter, `A` to `F` |
+| `option_a` … `option_d` | A and B yes | choice text; fill in order (up to 4 choices) |
+| `answer` | yes | correct choice letter, `A` to `D` |
 
 Never commit a filled-in questions CSV: it contains the answer key.
 

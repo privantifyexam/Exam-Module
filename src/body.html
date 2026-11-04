@@ -17,8 +17,8 @@
 <dialog class="qdlg" id="qDlg" aria-labelledby="qDlgT">
   <div class="qdlg-in stack s8">
     <div class="row between qdlg-head">
-      <h2 id="qDlgT">Questions and answers</h2>
-      <button class="btn btn-sm btn-ghost" id="qClose" type="button">Close</button>
+      <h2 id="qDlgT">Questions</h2>
+      <div class="row"><button class="btn btn-sm" id="qAdd" type="button">Add question</button><button class="btn btn-sm btn-ghost" id="qClose" type="button">Close</button></div>
     </div>
       <div class="row filters">
         <div class="field grow"><label class="sr-only" for="qSearch">Search questions</label><input class="input" id="qSearch" type="search" placeholder="Search questions or options" autocomplete="off"></div>
@@ -27,6 +27,9 @@
         </div>
       </div>
       <p class="help" id="qListNote"></p>
+      <p class="notice warn" id="qLock" role="status" hidden>An exam is running, so questions can't be changed until it ends.</p>
+      <p class="notice info" id="qEdMsg" role="status" hidden></p>
+      <p class="err" id="qEdErr" role="alert"></p>
       <ol class="qlist" id="qItems"></ol>
   </div>
 </dialog>
@@ -120,7 +123,6 @@
     </ul>
     <p class="notice warn" id="rLate" role="status" hidden>There isn't enough time left to answer every question. Any you don't reach will count as unanswered.</p>
     <div class="stack s8">
-      <button class="btn btn-lg" id="beginBtn" disabled>Start my test</button>
       <p class="muted center" id="rWait"></p>
     </div>
     <button class="btn btn-quiet" id="backBtn" type="button">Not you? Change details</button>
@@ -233,17 +235,10 @@
   <div class="card stack" style="margin-top:16px" id="qCard">
     <div class="row between">
       <h2>Questions <span class="muted small" id="qCount"></span></h2>
-      <div class="row"><button class="btn btn-sm btn-ghost" id="qView" type="button" aria-haspopup="dialog">View questions</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download questions</button><button class="btn btn-sm btn-quiet" id="qClear" type="button">Clear questions</button></div>
+      <div class="row"><button class="btn btn-sm btn-ghost" id="qView" type="button" aria-haspopup="dialog">View and edit questions</button></div>
     </div>
-    <p class="help">To add or change questions, choose an Excel file below. Put one question per row with the columns level, question, option_a to option_f and answer (the letter of the correct choice). This replaces all current questions. You can't change questions while an exam is running.</p>
+    <p class="help">To add or change questions, choose an Excel file below. Put one question per row with the columns level, question, option_a to option_d and answer (the letter of the correct choice). This replaces all current questions. You can't change questions while an exam is running.</p>
     <div class="row"><input class="input" id="qFile" type="file" accept=".xlsx,.xls,.csv" aria-label="Questions file" style="flex:1;min-width:220px"></div>
-    <div class="notice bad stack s8" id="qClrBox" role="alertdialog" aria-labelledby="qClrT" hidden>
-      <span id="qClrT"></span>
-      <div class="stack s8" id="qClr2" hidden>
-        <div class="field" style="max-width:260px"><label for="qClrIn">Type CLEAR to confirm</label><input class="input" id="qClrIn" type="text" autocomplete="off" spellcheck="false"></div>
-      </div>
-      <div class="row"><button class="btn btn-danger" id="qClrYes" type="button">Yes, clear them</button><button class="btn btn-ghost" id="qClrNo" type="button">Cancel</button></div>
-    </div>
     <div class="notice bad stack s8" id="qErrBox" role="alert" hidden><b id="qErrT"></b><ul class="qerr" id="qErrs"></ul><div><button class="btn btn-sm btn-ghost" id="qTpl" type="button" hidden>Download template</button></div></div>
     <div class="notice info stack s8" id="qOkBox" role="status" hidden>
       <span id="qOkT"></span>
