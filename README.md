@@ -35,6 +35,19 @@ python3 build.py        # writes dist/index.html
 
 The answer key is never stored in this repository.
 
+## Questions (CSV upload)
+Invigilators upload questions on the assessment dashboard (**Questions and answer key** card). Uploading replaces all questions (`questions/<track>`) and the answer key (`key/main` or `key/dietitian`); it is blocked while an exam is live. **Sample CSV** downloads a template.
+
+| Column | Required | Value |
+| --- | --- | --- |
+| `level` | yes | `Easy`, `Medium` or `Hard` |
+| `question` | yes | question text |
+| `option_a` … `option_d` | A and B yes | option text; fill in order |
+| `option_e`, `option_f` | no | extra options |
+| `answer` | yes | correct option letter, `A` to `F` |
+
+Never commit a filled-in questions CSV: it contains the answer key.
+
 ## Tests
 ```
 pip install playwright   # Chromium needed

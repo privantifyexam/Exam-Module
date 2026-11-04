@@ -1,6 +1,6 @@
 __QS__
 const SEC = 33, CIRC = 2 * Math.PI * 27;
-const BASE_URL = 'https://claude.ai/artifact/32MdKRmHw18xqSrDr6w4qF';
+const BASE_URL = location.origin + location.pathname;
 const TRACKS = {
   pharmacist: {name:'Pharmacist assessment', one:'pharmacist', many:'pharmacists', qs:QS_PH, state:'exam/state', key:'key/main', code:'key/code', ls:'sugarcare_session_v1',
     positions:['Pharmacist','Senior Pharmacist','Pharmacy Assistant','Pharmacy Technician','Store In-charge','Intern / Trainee','Other']},
@@ -12,6 +12,9 @@ const states = {}, keys = {}, codes = {}, rawDocs = {};
 const LV = ['Easy','Medium','Hard'];
 const lvCount = () => ({e: QS.filter(q => q.l === 'Easy').length, m: QS.filter(q => q.l === 'Medium').length, h: QS.filter(q => q.l === 'Hard').length});
 const needMin = () => Math.ceil(N * SEC / 60);
+// questions saved from the dashboard (questions/<track>) replace the ones built into the page
+function setQs(tr, qs){ TRACKS[tr].qs = qs; if (tr === TR){ QS = qs; N = qs.length; applyTrackText(); } }
+async function loadQs(){ await Promise.all(Object.keys(TRACKS).map(tr => db.doc('questions/' + tr).get().then(s => { if (s.exists && Array.isArray(s.data().qs)) setQs(tr, s.data().qs); }).catch(() => {}))); }
 function useTrack(tr){ TR = tr; T = TRACKS[tr]; QS = T.qs; N = QS.length; LS = T.ls; exam = states[tr] || {status:'idle'}; key = keys[tr] || null; secCode = codes[tr] || null; }
 const $ = id => document.getElementById(id);
 let db = null, user = null, isAdmin = false;
@@ -57,6 +60,8 @@ const lsSet = v => { try { v ? localStorage.setItem(LS, JSON.stringify(v)) : loc
 const eff = () => exam.status === 'live' ? (Date.now() < exam.endsAt ? 'live' : 'ended') : exam.status;
 const mmss = ms => { ms = Math.max(0, Math.round(ms/1000)); return Math.floor(ms/60) + ':' + String(ms%60).padStart(2,'0'); };
 const fmtT = t => t ? new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '–';
+// error text for messages, without its own trailing full stop
+const errText = e => String((e && (e.message || e.code)) || 'unknown error').trim().replace(/[.\s]+$/, '');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const say = t => { const r = $('sr'); r.textContent = ''; setTimeout(() => r.textContent = t, 30); };
 
@@ -379,7 +384,7 @@ $('aStart').onclick = async () => {
   const m = Math.min(180, Math.max(5, +$('aMins').value || 35)), t = Date.now();
   $('aMins').value = m; $('aErr').textContent = ''; $('aStart').disabled = true;
   try { const code = newCode(); await db.doc(T.code).set({code, examId:String(t)}); await db.doc(T.state).set({status:'live', startedAt:t, endsAt:t+m*60000, windowMin:m, codeHash: await hashCode(code, String(t))}); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; msg('Exam opened for ' + m + ' minutes. It closes at ' + fmtT(t+m*60000) + '. Security code: ' + code + '. Share the exam link and the code with the ' + T.many + '.'); }
-  catch(e){ $('aErr').textContent = 'Could not start the exam: ' + (e.message||e.code) + '. Check your connection and press Start exam again.'; }
+  catch(e){ $('aErr').textContent = 'Could not start the exam: ' + errText(e) + '. Check your connection and press Start exam again.'; }
   $('aStart').disabled = !N;
 };
 $('aEnd').onclick = () => { endArmed = true; paintAdmin(); $('aEndNo').focus(); };
@@ -387,7 +392,7 @@ $('aEndNo').onclick = () => { endArmed = false; paintAdmin(); $('aEnd').focus();
 $('aEndYes').onclick = async () => {
   $('aEndYes').disabled = true;
   try { await db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt:Date.now()})); endArmed = false; msg('Exam ended at ' + fmtT(Date.now()) + '. Anyone still taking the test was submitted with their answers so far.'); }
-  catch(e){ $('aErr').textContent = 'Could not end the exam: ' + (e.message||e.code) + '. Try again.'; }
+  catch(e){ $('aErr').textContent = 'Could not end the exam: ' + errText(e) + '. Try again.'; }
   $('aEndYes').disabled = false; paintAdmin();
 };
 $('aClear').onclick = () => {
@@ -400,7 +405,7 @@ $('aClearYes').onclick = async () => {
   try { await Promise.all(Object.keys(rawDocs).map(id => { const o = rawDocs[id], keep = {}; let drop = 0;
       Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0 && (o[k].track || 'pharmacist') === TR) drop++; else keep[k] = o[k]; });
       if (!drop) return null; return Object.keys(keep).length ? db.doc('results/' + id).set(keep) : db.doc('results/' + id).delete(); })); $('aClearBox').hidden = true; msg(n + ' stored attempt' + (n === 1 ? '' : 's') + ' deleted.'); }
-  catch(e){ msg('Could not delete the results: ' + (e.message||e.code) + '. Nothing was changed on your screen; try again.'); }
+  catch(e){ msg('Could not delete the results: ' + errText(e) + '. Nothing was changed on your screen; try again.'); }
   $('aClearYes').disabled = false;
 };
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { fSt = b.dataset.f; paintAdmin(); });
@@ -485,7 +490,7 @@ $('aCodeNew').onclick = async () => {
   if (eff() !== 'live') return;
   const b = $('aCodeNew'); b.disabled = true;
   try { const code = newCode(), id = String(exam.startedAt); await db.doc(T.code).set({code, examId:id}); await db.doc(T.state).set(Object.assign({}, exam, {codeHash: await hashCode(code, id)})); msg('New security code: ' + code + '. The old code no longer works. Anyone already taking the test carries on.'); }
-  catch(e){ $('aErr').textContent = 'Could not make a new code: ' + (e.message||e.code) + '. Try again.'; }
+  catch(e){ $('aErr').textContent = 'Could not make a new code: ' + errText(e) + '. Try again.'; }
   b.disabled = false;
 };
 $('aCopy').onclick = async () => {
@@ -504,7 +509,7 @@ function applyTrackText(){
   $('aMinsWarn').hidden = !(+$('aMins').value < needMin());
   const link = BASE_URL + '#' + TR;
   $('aLink').value = link; $('aShareT').textContent = 'Exam link for ' + T.many;
-  $('aWa').href = 'https://wa.me/?text=' + encodeURIComponent('SugarCARE ' + T.name + '. Open this link at exam time, sign in with your invited Claude account and keep the page open: ' + link);
+  $('aWa').href = 'https://wa.me/?text=' + encodeURIComponent('SugarCARE ' + T.name + '. Open this link at exam time, keep the page open until you submit: ' + link);
 }
 function homeLine(tr){
   const st = states[tr] || {status:'idle'}, live = st.status === 'live' && Date.now() < st.endsAt;
@@ -581,10 +586,11 @@ async function boot(){
   applyTrackText(); show('sLogin'); statusChip($('stChip'));
   ticker = setInterval(tick, 250);
   try { db = await claude.use('db'); user = await claude.use('user'); isAdmin = user ? await user.canEdit() : false; uid = user ? await user.id() : null; } catch(e){ db = null; }
+  if (db) await loadQs();
   booted = true;
   if (!db){
     statusChip($('stChip'));
-    $('loginErr').textContent = 'You cannot join from this screen. Sign in to Claude with the account the invigilator invited, then open the link again. If you are signed in, ask the invigilator to check your invite.';
+    $('loginErr').textContent = 'Could not reach the exam server. Check your internet connection and open the link again. If it still fails, tell the invigilator.';
     $('loginErr').hidden = false; $('loginBtn').disabled = true; return;
   }
   if (!N && !isAdmin){

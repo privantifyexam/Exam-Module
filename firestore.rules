@@ -1,0 +1,41 @@
+rules_version = '2';
+// SugarCARE Exam Module. An invigilator is an email/password account listed in invigilatorEmails(),
+// or any account with a document admins/<uid> (added in the Firebase console).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function invigilatorEmails() { return ['privantifyexam@gmail.com']; }
+    function isAdmin() {
+      return signedIn() && (
+        (request.auth.token.firebase.sign_in_provider == 'password'
+          && request.auth.token.email in invigilatorEmails())
+        || exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // invigilator list: each person may only check their own entry
+    match /admins/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+    // exam state (status, times, security code hash): staff read, invigilator writes
+    match /exam/{doc} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    // questions and options (no answers): staff read, invigilator uploads
+    match /questions/{track} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+    // answer keys and plain security codes: invigilator only
+    match /key/{doc} {
+      allow read, write: if isAdmin();
+    }
+    // attempts: each person reads and writes their own doc; invigilator reads all and may clear
+    match /results/{uid} {
+      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow create, update: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      allow delete: if isAdmin();
+    }
+  }
+}

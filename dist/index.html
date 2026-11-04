@@ -1,7 +1,12 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SugarCARE Assessment</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <style>
 :root {
   /* ---- Brand ----------------------------------------------------------
@@ -542,6 +547,12 @@ td.num,th.num{text-align:right}
 .pv-in{max-width:1120px;margin:0 auto;display:flex;gap:10px 16px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-block:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .pvcode{font-family:var(--font-mono);letter-spacing:.15em}
 .pvscore{border:1px solid var(--edge-brand);background:var(--tint-brand);border-radius:var(--r-md);padding:14px;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* invigilator sign-in gate */
+.gate{position:fixed;inset:0;z-index:50;overflow:auto;background:var(--surface-1);padding:48px 16px}
+.gate .col{margin:0 auto}
+.signout{margin-left:12px;background:none;border:0;padding:0;color:inherit;font:inherit;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer}
+.qerr{margin:0;padding-left:18px;font-size:13px}
 </style>
 <header class="top">
   <div class="top-in">
@@ -558,6 +569,28 @@ td.num,th.num{text-align:right}
 
 <main>
 <!-- SIGN IN -->
+<!-- INVIGILATOR SIGN-IN (Firebase email and password; shown only with ?admin) -->
+<div id="adminGate" class="gate" hidden>
+  <section class="col">
+    <div class="card stack">
+      <div class="stack s8">
+        <span class="eyebrow">Invigilator</span>
+        <h1>Sign in</h1>
+        <p class="muted">Only invigilators sign in here. Staff taking the test do not need an account.</p>
+      </div>
+      <p class="notice bad" id="gErr" role="alert" hidden></p>
+      <form id="gForm" class="stack" novalidate>
+        <div class="field"><label for="gEmail">Email</label>
+          <input class="input" id="gEmail" type="email" autocomplete="username" required></div>
+        <div class="field"><label for="gPass">Password</label>
+          <input class="input" id="gPass" type="password" autocomplete="current-password" required></div>
+        <button class="btn btn-lg" type="submit" id="gBtn">Sign in</button>
+        <button class="btn btn-ghost" type="button" id="gReset">Forgot password</button>
+      </form>
+    </div>
+  </section>
+</div>
+
 <section id="sLogin" class="col" hidden>
   <div class="card stack">
     <div class="stack s8">
@@ -712,13 +745,26 @@ td.num,th.num{text-align:right}
           <div class="row"><button class="btn btn-danger" id="aEndYes">End exam now</button><button class="btn btn-ghost" id="aEndNo">Keep running</button></div>
         </div>
       </div>
-      <div class="stack s8" id="aShare"><span class="eyebrow" id="aShareT">Exam link</span><div class="row"><input class="input" id="aLink" type="text" readonly value="" aria-label="Exam link" style="flex:1;min-width:220px"><button class="btn" id="aCopy" type="button">Copy link</button><a class="btn btn-ghost" id="aWa" href="https://wa.me/" target="_blank" rel="noopener">Share on WhatsApp</a></div><p class="help">Staff can open this link only after you invite them from this page's Share menu with permission to use it.</p></div>
+      <div class="stack s8" id="aShare"><span class="eyebrow" id="aShareT">Exam link</span><div class="row"><input class="input" id="aLink" type="text" readonly value="" aria-label="Exam link" style="flex:1;min-width:220px"><button class="btn" id="aCopy" type="button">Copy link</button><a class="btn btn-ghost" id="aWa" href="https://wa.me/" target="_blank" rel="noopener">Share on WhatsApp</a></div><p class="help">Staff open this link at exam time and type the security code after their details.</p></div>
       <p class="err" id="aErr" role="alert"></p>
     </div>
     <div class="card stack">
       <span class="eyebrow">Live count</span>
       <div class="stats" id="aStats"></div>
       <p class="help" id="aKeyNote"></p>
+    </div>
+  </div>
+  <div class="card stack" style="margin-top:16px" id="qCard">
+    <div class="row between">
+      <h2>Questions and answer key <span class="muted small" id="qCount"></span></h2>
+      <div class="row"><button class="btn btn-sm btn-ghost" id="qSample" type="button">Sample CSV</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download current</button></div>
+    </div>
+    <p class="help">Upload a .csv file with one question per row: level, question, options A to D (E and F optional) and the correct option letter. Uploading replaces all questions and the answer key for this assessment. You can't upload while an exam is live.</p>
+    <div class="row"><input class="input" id="qFile" type="file" accept=".csv,text/csv" aria-label="Questions CSV file" style="flex:1;min-width:220px"></div>
+    <div class="notice bad stack s8" id="qErrBox" role="alert" hidden><b id="qErrT"></b><ul class="qerr" id="qErrs"></ul></div>
+    <div class="notice info stack s8" id="qOkBox" role="status" hidden>
+      <span id="qOkT"></span>
+      <div class="row"><button class="btn" id="qSave" type="button">Save questions and key</button><button class="btn btn-ghost" id="qCancel" type="button">Cancel</button></div>
     </div>
   </div>
   <div class="card stack" style="margin-top:16px">
@@ -744,11 +790,107 @@ td.num,th.num{text-align:right}
 </section>
 </main>
 <script>
+/* Firebase backend: provides claude.use('db' | 'user' | 'downloads') on top of Firestore and Firebase Auth.
+   Staff sign in anonymously. The invigilator opens the page with ?admin and signs in with email and password
+   (Firebase Authentication). Who counts as an invigilator is decided by firestore.rules: the app checks it by
+   trying to read key/code, which only invigilators may read. */
+(() => {
+  if (window.claude) return;   // tests (tests/stub.js) or the Claude artifact host already provide it
+  const cfg = {
+    apiKey: 'AIzaSyBdQv7kppzAEpGJ5GiItT31ttJFI2BzjYE',
+    authDomain: 'privantifyexam-be483.firebaseapp.com',
+    projectId: 'privantifyexam-be483',
+    storageBucket: 'privantifyexam-be483.firebasestorage.app',
+    messagingSenderId: '117793467742',
+    appId: '1:117793467742:web:e90fcc4b5b6a652088f3cf'
+  };
+  const wantAdmin = new URLSearchParams(location.search).has('admin');
+  const el = id => document.getElementById(id);
+  const AUTH_MSG = {
+    'auth/invalid-email': 'Enter a valid email address.',
+    'auth/missing-password': 'Enter your password.',
+    'auth/invalid-credential': 'Email or password is wrong.',
+    'auth/wrong-password': 'Email or password is wrong.',
+    'auth/user-not-found': 'Email or password is wrong.',
+    'auth/user-disabled': 'This account has been turned off.',
+    'auth/too-many-requests': 'Too many tries. Wait a few minutes and try again.',
+    'auth/network-request-failed': 'No internet connection. Check it and try again.'
+  };
+  const authMsg = e => AUTH_MSG[e && e.code] || 'Could not sign in: ' + String((e && (e.message || e.code)) || 'unknown error').trim().replace(/[.\s]+$/, '') + '.';
+
+  async function isInvigilator(fs){
+    try { await fs.doc('key/code').get(); return true; } catch(e){ return false; }
+  }
+  // show the sign-in gate until an invigilator account signs in
+  function gate(auth, fs){
+    return new Promise(resolve => {
+      const g = el('adminGate'), err = el('gErr'), btn = el('gBtn');
+      const say = t => { err.textContent = t; err.hidden = !t; };
+      g.hidden = false; el('gEmail').focus();
+      el('gForm').onsubmit = async ev => {
+        ev.preventDefault(); say(''); btn.disabled = true; btn.textContent = 'Signing in…';
+        try {
+          const u = (await auth.signInWithEmailAndPassword(el('gEmail').value.trim(), el('gPass').value)).user;
+          if (await isInvigilator(fs)){ el('gPass').value = ''; g.hidden = true; resolve(u); return; }
+          await auth.signOut(); say('This account is not an invigilator. Ask the exam owner to add it.');
+        } catch(e){ say(authMsg(e)); }
+        btn.disabled = false; btn.textContent = 'Sign in';
+      };
+      el('gReset').onclick = async () => {
+        const email = el('gEmail').value.trim();
+        if (!email){ say('Type your email first, then press Forgot password.'); el('gEmail').focus(); return; }
+        try { await auth.sendPasswordResetEmail(email); say(''); err.hidden = false; err.textContent = 'If this email has an account, a reset link is on its way.'; }
+        catch(e){ say(authMsg(e)); }
+      };
+    });
+  }
+  function addSignOut(auth){
+    const who = el('who'); if (!who || el('signOut')) return;
+    const b = document.createElement('button'); b.id = 'signOut'; b.type = 'button'; b.className = 'signout'; b.textContent = 'Sign out';
+    b.onclick = async () => { await auth.signOut(); location.reload(); };
+    who.insertAdjacentElement('afterend', b);
+  }
+
+  let ready = null;
+  function start(){
+    if (ready) return ready;
+    ready = (async () => {
+      if (!window.firebase) throw new Error('Firebase did not load');
+      const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
+      const auth = app.auth(), fs = app.firestore();
+      await new Promise(r => { const off = auth.onAuthStateChanged(() => { off(); r(); }); });
+      let u = auth.currentUser, admin = false;
+      if (u && !u.isAnonymous) admin = await isInvigilator(fs);
+      if (wantAdmin && !admin){
+        if (u && !u.isAnonymous) await auth.signOut();
+        u = await gate(auth, fs); admin = true;
+      } else if (!u || (!u.isAnonymous && !admin)){
+        if (u) await auth.signOut();
+        u = (await auth.signInAnonymously()).user;
+      }
+      if (admin) addSignOut(auth);
+      return {fs, u, admin};
+    })();
+    return ready;
+  }
+  const downloads = {save: async f => {
+    const a = document.createElement('a'), url = URL.createObjectURL(new Blob([f.data]));
+    a.href = url; a.download = f.filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  }};
+  window.claude = {use: async n => {
+    if (n === 'downloads') return downloads;
+    const s = await start();
+    if (n === 'db') return s.fs;
+    if (n === 'user') return {canEdit: async () => s.admin, id: async () => s.u.uid};
+    return null;
+  }};
+})();
 // Pharmacist assessment: 50 questions (l = level, q = question, o = options A-D). Answers are NOT here; the key lives in the database (key/main).
 const QS_PH = [{"l": "Easy", "q": "Metformin belongs to which drug class?", "o": ["Sulfonylurea", "Biguanide", "Thiazolidinedione", "DPP-4 inhibitor"]}, {"l": "Easy", "q": "Pioglitazone belongs to which drug class?", "o": ["Biguanide", "SGLT2 inhibitor", "α-glucosidase inhibitor", "Thiazolidinedione"]}, {"l": "Easy", "q": "Voglibose belongs to which drug class?", "o": ["GLP-1 receptor agonist", "Sulfonylurea", "α-glucosidase inhibitor", "Biguanide"]}, {"l": "Easy", "q": "Empagliflozin belongs to which drug class?", "o": ["SGLT2 inhibitor", "DPP-4 inhibitor", "GLP-1 receptor agonist", "Thiazolidinedione"]}, {"l": "Easy", "q": "Clopidogrel belongs to which drug class?", "o": ["COX-1 inhibitor", "PDE-3 inhibitor", "P2Y12 inhibitor", "HMG-CoA reductase inhibitor"]}, {"l": "Easy", "q": "Atorvastatin belongs to which drug class?", "o": ["HMG-CoA reductase inhibitor", "Calcium-channel blocker", "ARB", "Fibrate"]}, {"l": "Easy", "q": "Which brand in our formulary contains glimepiride?", "o": ["Glizid", "Linatab", "Gride", "Jalra"]}, {"l": "Easy", "q": "Which brand in our formulary contains gliclazide?", "o": ["Gride", "Kglim", "Glimy", "Glizid"]}, {"l": "Easy", "q": "Which brand in our formulary contains linagliptin?", "o": ["Tenlimac", "Linatab", "Jalra", "Sitaglo"]}, {"l": "Easy", "q": "Which brand in our formulary contains vildagliptin?", "o": ["Linatab", "Voglidase", "Jalra", "Sitaglo"]}, {"l": "Easy", "q": "Which brand in our formulary contains levothyroxine?", "o": ["Looz", "Thyronorm", "Lanol ER", "Tamzloin"]}, {"l": "Easy", "q": "Which brand in our formulary contains telmisartan?", "o": ["Cilnipress", "Telmistan", "Lostat", "Amlovin"]}, {"l": "Easy", "q": "Which brand in our formulary contains tirzepatide?", "o": ["Ozempic", "Victoza", "Mounjaro", "Trulicity"]}, {"l": "Easy", "q": "When should glimepiride be taken?", "o": ["Only after dinner", "With breakfast", "At bedtime on an empty stomach", "30 minutes after lunch"]}, {"l": "Easy", "q": "When is voglibose taken?", "o": ["Only in the morning on an empty stomach", "At bedtime", "Two hours after meals", "Just before meals"]}, {"l": "Easy", "q": "When are rabeprazole or esomeprazole usually taken?", "o": ["Only when pain starts", "With the last bite of lunch", "At bedtime after dinner", "30 minutes before breakfast"]}, {"l": "Easy", "q": "Which strengths of Pioglaz (pioglitazone) are in our formulary?", "o": ["7.5, 15 and 30 mg", "50, 100 and 200 mg", "1, 2 and 4 mg", "2.5 and 5 mg"]}, {"l": "Easy", "q": "Which strengths of Rybelsus (oral semaglutide) are in our formulary?", "o": ["3, 7 and 14 mg", "0.25, 0.5 and 1 mg", "5 and 10 mcg", "10, 20 and 40 mg"]}, {"l": "Easy", "q": "Sitaglo (sitagliptin) is available in which strength?", "o": ["100 mg", "5 mg", "20 mg", "1,000 mg"]}, {"l": "Easy", "q": "Unitor in our formulary contains atorvastatin of what strength?", "o": ["10 mg", "40 mg", "5 mg", "20 mg"]}, {"l": "Easy", "q": "Long-term metformin use can cause deficiency of which vitamin?", "o": ["Vitamin K", "Vitamin C", "Vitamin A", "Vitamin B12"]}, {"l": "Easy", "q": "What is the main side effect of sulfonylureas such as glimepiride and gliclazide?", "o": ["Hyperkalaemia", "Hypoglycaemia", "Constipation", "Genital infections"]}, {"l": "Easy", "q": "Which side effect is typical of SGLT2 inhibitors like dapagliflozin?", "o": ["Genital mycotic infection and UTI", "Dry cough", "Phosphenes (visual flashes)", "Ankle oedema"]}, {"l": "Easy", "q": "Which side effects are most common when starting a GLP-1 receptor agonist?", "o": ["Nausea, vomiting and diarrhoea", "Ankle swelling and flushing", "Dry mouth and urinary retention", "Cough and hyperkalaemia"]}, {"l": "Easy", "q": "Which side effects are typical of pioglitazone?", "o": ["Metallic taste", "Phosphenes", "Flatulence and bloating", "Oedema and weight gain"]}, {"l": "Easy", "q": "Besides type 2 diabetes, dapagliflozin is also used for which conditions?", "o": ["Epilepsy and migraine", "Asthma and COPD", "Heart failure and chronic kidney disease", "Hypothyroidism and gout"]}, {"l": "Easy", "q": "Besides hypertension, telmisartan is also used for which purposes?", "o": ["Constipation and bloating", "Neuropathic pain and insomnia", "Gout and psoriasis", "CV risk reduction and diabetic kidney disease"]}, {"l": "Easy", "q": "What is the usual starting basal insulin dose in type 2 diabetes?", "o": ["50 units at once", "1.5 U/kg/day", "0.5 units per day", "10 units, or 0.1–0.2 U/kg/day"]}, {"l": "Easy", "q": "How is basal insulin usually titrated in type 2 diabetes?", "o": ["+2 units every 3 days until the fasting target is met", "+20 units every day", "−2 units every week", "Doubled every 3 days"]}, {"l": "Easy", "q": "What is the usual total daily insulin dose in type 1 diabetes?", "o": ["5–10 U/kg/day", "0.4–1 U/kg/day", "Fixed at 10 units", "0.01 U/kg/day"]}, {"l": "Easy", "q": "CASE: Mr Raj, 52, is newly diagnosed with type 2 diabetes and has no other illness. Which drug is the usual starting drug?", "o": ["Pioglitazone", "Insulin glargine", "Glimepiride", "Metformin"]}, {"l": "Easy", "q": "CASE: A patient on glimepiride skipped lunch and now feels sweaty, shaky and dizzy. What is the most likely cause?", "o": ["Lactic acidosis", "Hyperglycaemia", "Hypothyroidism", "Hypoglycaemia"]}, {"l": "Easy", "q": "CASE: A 70 kg man with type 2 diabetes is starting basal insulin at 0.1–0.2 U/kg/day. What is the starting dose range?", "o": ["7–14 units per day", "70–140 units per day", "0.7–1.4 units per day", "35–70 units per day"]}, {"l": "Easy", "q": "CASE: A diabetic patient on metformin and dapagliflozin has had vomiting and diarrhoea for two days. What should the pharmacist advise?", "o": ["Hold both medicines and call the clinic", "Stop only the atorvastatin", "Continue both and drink less water", "Double the metformin dose"]}, {"l": "Easy", "q": "CASE: A diabetic patient complains of burning pain in both feet at night (painful diabetic neuropathy). Which formulary drug is used for this?", "o": ["Gliclazide", "Atorvastatin", "Voglibose", "Gabapentin"]}, {"l": "Medium", "q": "Which of these GLP-1 based drugs is NOT a once-weekly injection?", "o": ["Semaglutide (Ozempic)", "Dulaglutide", "Liraglutide", "Tirzepatide"]}, {"l": "Medium", "q": "What is the Ozempic (semaglutide SC) dose ladder for diabetes?", "o": ["1 mg daily, then 2 mg daily", "0.25 mg weekly for 4 weeks, then 0.5 → 1 → max 2 mg", "0.6 mg daily, then 1.2 mg, max 1.8 mg", "2.5 mg weekly, then +2.5 mg every 4 weeks"]}, {"l": "Medium", "q": "How is tirzepatide (Mounjaro) started?", "o": ["0.6 mg daily", "5 mcg twice daily", "0.25 mg weekly for 4 weeks", "2.5 mg weekly for 4 weeks, then +2.5 mg every 4 weeks"]}, {"l": "Medium", "q": "Imeglimin, the newest oral agent in Section A, works by:", "o": ["Blocking DPP-4", "Blocking renal SGLT2", "Delaying carbohydrate breakdown in the gut", "Improving mitochondrial function to raise insulin secretion and sensitivity"]}, {"l": "Medium", "q": "How is exenatide (Byetta) started and given?", "o": ["10 mcg once weekly after meals", "0.6 mg once daily", "5 mcg twice daily for 1 month, then 10 mcg twice daily, within 60 min before meals", "1 mg once weekly"]}, {"l": "Medium", "q": "Liraglutide: which brand is used for obesity and which for diabetes?", "o": ["Victoza for obesity, Saxenda for diabetes", "Both only for obesity", "Saxenda for obesity, Victoza for diabetes", "Both only for diabetes"]}, {"l": "Medium", "q": "How must a Rybelsus (oral semaglutide) tablet be taken?", "o": ["At bedtime with milk", "With a heavy breakfast", "Empty stomach, up to 120 ml water, then wait 30 minutes", "Chewed with juice"]}, {"l": "Medium", "q": "Which newer insulin is given once WEEKLY?", "o": ["Glargine U300 (Toujeo)", "Faster aspart (Fiasp)", "Icodec (Awiqli)", "Degludec (Tresiba)"]}, {"l": "Medium", "q": "Which insulin is the ultra-rapid one, given at meal start or within 20 minutes after?", "o": ["Faster aspart (Fiasp)", "Insulin degludec", "Regular human insulin", "Isophane (NPH)"]}, {"l": "Medium", "q": "A woman on tirzepatide uses oral contraceptive pills. What is advised?", "o": ["Add barrier contraception for 4 weeks after starting and after each dose step", "Stop tirzepatide permanently", "Take the pill twice daily", "No change needed"]}, {"l": "Hard", "q": "Which list contains only DPP-4 inhibitors?", "o": ["Linagliptin, pioglitazone, sitagliptin, imeglimin", "Sitagliptin, dapagliflozin, linagliptin, voglibose", "Vildagliptin, empagliflozin, teneligliptin, gliclazide", "Sitagliptin, vildagliptin, linagliptin, teneligliptin"]}, {"l": "Hard", "q": "Which of these is CONTRAINDICATED in pregnancy (module wording)?", "o": ["Methotrexate", "Amlodipine", "Metoprolol succinate", "Paracetamol"]}, {"l": "Hard", "q": "Which drug combination must never be given together?", "o": ["Atorvastatin with ezetimibe", "Clopidogrel with aspirin", "Telmisartan with amlodipine", "Febuxostat with azathioprine"]}, {"l": "Hard", "q": "Amitriptyline should be avoided in which patients?", "o": ["Those with asthma only", "Those with recent MI, glaucoma or BPH", "Those with hypothyroidism", "Those with iron deficiency"]}, {"l": "Hard", "q": "Which two formulary drugs are controlled benzodiazepines needing a register entry?", "o": ["Alprazolam and hydroxyzine", "Gabapentin and clonazepam", "Alprazolam and clonazepam", "Duloxetine and alprazolam"]}];
 
 const SEC = 33, CIRC = 2 * Math.PI * 27;
-const BASE_URL = 'https://claude.ai/artifact/32MdKRmHw18xqSrDr6w4qF';
+const BASE_URL = location.origin + location.pathname;
 const TRACKS = {
   pharmacist: {name:'Pharmacist assessment', one:'pharmacist', many:'pharmacists', qs:QS_PH, state:'exam/state', key:'key/main', code:'key/code', ls:'sugarcare_session_v1',
     positions:['Pharmacist','Senior Pharmacist','Pharmacy Assistant','Pharmacy Technician','Store In-charge','Intern / Trainee','Other']},
@@ -760,6 +902,9 @@ const states = {}, keys = {}, codes = {}, rawDocs = {};
 const LV = ['Easy','Medium','Hard'];
 const lvCount = () => ({e: QS.filter(q => q.l === 'Easy').length, m: QS.filter(q => q.l === 'Medium').length, h: QS.filter(q => q.l === 'Hard').length});
 const needMin = () => Math.ceil(N * SEC / 60);
+// questions saved from the dashboard (questions/<track>) replace the ones built into the page
+function setQs(tr, qs){ TRACKS[tr].qs = qs; if (tr === TR){ QS = qs; N = qs.length; applyTrackText(); } }
+async function loadQs(){ await Promise.all(Object.keys(TRACKS).map(tr => db.doc('questions/' + tr).get().then(s => { if (s.exists && Array.isArray(s.data().qs)) setQs(tr, s.data().qs); }).catch(() => {}))); }
 function useTrack(tr){ TR = tr; T = TRACKS[tr]; QS = T.qs; N = QS.length; LS = T.ls; exam = states[tr] || {status:'idle'}; key = keys[tr] || null; secCode = codes[tr] || null; }
 const $ = id => document.getElementById(id);
 let db = null, user = null, isAdmin = false;
@@ -805,6 +950,8 @@ const lsSet = v => { try { v ? localStorage.setItem(LS, JSON.stringify(v)) : loc
 const eff = () => exam.status === 'live' ? (Date.now() < exam.endsAt ? 'live' : 'ended') : exam.status;
 const mmss = ms => { ms = Math.max(0, Math.round(ms/1000)); return Math.floor(ms/60) + ':' + String(ms%60).padStart(2,'0'); };
 const fmtT = t => t ? new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '–';
+// error text for messages, without its own trailing full stop
+const errText = e => String((e && (e.message || e.code)) || 'unknown error').trim().replace(/[.\s]+$/, '');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const say = t => { const r = $('sr'); r.textContent = ''; setTimeout(() => r.textContent = t, 30); };
 
@@ -1127,7 +1274,7 @@ $('aStart').onclick = async () => {
   const m = Math.min(180, Math.max(5, +$('aMins').value || 35)), t = Date.now();
   $('aMins').value = m; $('aErr').textContent = ''; $('aStart').disabled = true;
   try { const code = newCode(); await db.doc(T.code).set({code, examId:String(t)}); await db.doc(T.state).set({status:'live', startedAt:t, endsAt:t+m*60000, windowMin:m, codeHash: await hashCode(code, String(t))}); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; msg('Exam opened for ' + m + ' minutes. It closes at ' + fmtT(t+m*60000) + '. Security code: ' + code + '. Share the exam link and the code with the ' + T.many + '.'); }
-  catch(e){ $('aErr').textContent = 'Could not start the exam: ' + (e.message||e.code) + '. Check your connection and press Start exam again.'; }
+  catch(e){ $('aErr').textContent = 'Could not start the exam: ' + errText(e) + '. Check your connection and press Start exam again.'; }
   $('aStart').disabled = !N;
 };
 $('aEnd').onclick = () => { endArmed = true; paintAdmin(); $('aEndNo').focus(); };
@@ -1135,7 +1282,7 @@ $('aEndNo').onclick = () => { endArmed = false; paintAdmin(); $('aEnd').focus();
 $('aEndYes').onclick = async () => {
   $('aEndYes').disabled = true;
   try { await db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt:Date.now()})); endArmed = false; msg('Exam ended at ' + fmtT(Date.now()) + '. Anyone still taking the test was submitted with their answers so far.'); }
-  catch(e){ $('aErr').textContent = 'Could not end the exam: ' + (e.message||e.code) + '. Try again.'; }
+  catch(e){ $('aErr').textContent = 'Could not end the exam: ' + errText(e) + '. Try again.'; }
   $('aEndYes').disabled = false; paintAdmin();
 };
 $('aClear').onclick = () => {
@@ -1148,7 +1295,7 @@ $('aClearYes').onclick = async () => {
   try { await Promise.all(Object.keys(rawDocs).map(id => { const o = rawDocs[id], keep = {}; let drop = 0;
       Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0 && (o[k].track || 'pharmacist') === TR) drop++; else keep[k] = o[k]; });
       if (!drop) return null; return Object.keys(keep).length ? db.doc('results/' + id).set(keep) : db.doc('results/' + id).delete(); })); $('aClearBox').hidden = true; msg(n + ' stored attempt' + (n === 1 ? '' : 's') + ' deleted.'); }
-  catch(e){ msg('Could not delete the results: ' + (e.message||e.code) + '. Nothing was changed on your screen; try again.'); }
+  catch(e){ msg('Could not delete the results: ' + errText(e) + '. Nothing was changed on your screen; try again.'); }
   $('aClearYes').disabled = false;
 };
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { fSt = b.dataset.f; paintAdmin(); });
@@ -1233,7 +1380,7 @@ $('aCodeNew').onclick = async () => {
   if (eff() !== 'live') return;
   const b = $('aCodeNew'); b.disabled = true;
   try { const code = newCode(), id = String(exam.startedAt); await db.doc(T.code).set({code, examId:id}); await db.doc(T.state).set(Object.assign({}, exam, {codeHash: await hashCode(code, id)})); msg('New security code: ' + code + '. The old code no longer works. Anyone already taking the test carries on.'); }
-  catch(e){ $('aErr').textContent = 'Could not make a new code: ' + (e.message||e.code) + '. Try again.'; }
+  catch(e){ $('aErr').textContent = 'Could not make a new code: ' + errText(e) + '. Try again.'; }
   b.disabled = false;
 };
 $('aCopy').onclick = async () => {
@@ -1252,7 +1399,7 @@ function applyTrackText(){
   $('aMinsWarn').hidden = !(+$('aMins').value < needMin());
   const link = BASE_URL + '#' + TR;
   $('aLink').value = link; $('aShareT').textContent = 'Exam link for ' + T.many;
-  $('aWa').href = 'https://wa.me/?text=' + encodeURIComponent('SugarCARE ' + T.name + '. Open this link at exam time, sign in with your invited Claude account and keep the page open: ' + link);
+  $('aWa').href = 'https://wa.me/?text=' + encodeURIComponent('SugarCARE ' + T.name + '. Open this link at exam time, keep the page open until you submit: ' + link);
 }
 function homeLine(tr){
   const st = states[tr] || {status:'idle'}, live = st.status === 'live' && Date.now() < st.endsAt;
@@ -1329,10 +1476,11 @@ async function boot(){
   applyTrackText(); show('sLogin'); statusChip($('stChip'));
   ticker = setInterval(tick, 250);
   try { db = await claude.use('db'); user = await claude.use('user'); isAdmin = user ? await user.canEdit() : false; uid = user ? await user.id() : null; } catch(e){ db = null; }
+  if (db) await loadQs();
   booted = true;
   if (!db){
     statusChip($('stChip'));
-    $('loginErr').textContent = 'You cannot join from this screen. Sign in to Claude with the account the invigilator invited, then open the link again. If you are signed in, ask the invigilator to check your invite.';
+    $('loginErr').textContent = 'Could not reach the exam server. Check your internet connection and open the link again. If it still fails, tell the invigilator.';
     $('loginErr').hidden = false; $('loginBtn').disabled = true; return;
   }
   if (!N && !isAdmin){
@@ -1351,4 +1499,105 @@ async function boot(){
   if (!isAdmin) setTimeout(() => { if (!firstState){ firstState = true; resume(); } }, 3000);
 }
 boot();
+/* ---------- questions and answer key (CSV upload, invigilator only) ---------- */
+const Q_COLS = ['level', 'question', 'option_a', 'option_b', 'option_c', 'option_d', 'option_e', 'option_f', 'answer'];
+const Q_LETTERS = 'ABCDEF';
+// RFC 4180 CSV: quoted fields may hold commas, quotes ("") and line breaks
+function parseCsv(text){
+  const rows = []; let row = [], f = '', q = false;
+  text = text.replace(/^﻿/, '');
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i+1] === '"'){ f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ','){ row.push(f); f = ''; }
+    else if (c === '\n' || c === '\r'){ if (c === '\r' && text[i+1] === '\n') i++; row.push(f); rows.push(row); row = []; f = ''; }
+    else f += c;
+  }
+  if (f !== '' || row.length){ row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(x => x.trim() !== ''));
+}
+const csvCell = v => /[",\n\r]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+const toCsv = rows => rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+// returns {qs, answers, errs}; questions keep the CSV order (the exam shuffles within each level)
+function readQuestions(text){
+  const rows = parseCsv(text), errs = [];
+  if (!rows.length) return {errs: ['The file is empty.']};
+  const head = rows[0].map(h => h.trim().toLowerCase().replace(/\s+/g, '_'));
+  const at = {}; Q_COLS.forEach(c => at[c] = head.indexOf(c));
+  const missing = ['level', 'question', 'option_a', 'option_b', 'answer'].filter(c => at[c] < 0);
+  if (missing.length) return {errs: ['The first row must be the header. Missing column' + (missing.length > 1 ? 's' : '') + ': ' + missing.join(', ') + '. Use the Sample CSV as a template.']};
+  const qs = [], answers = [];
+  rows.slice(1).forEach((r, k) => {
+    const line = k + 2, get = c => at[c] >= 0 ? String(r[at[c]] || '').trim() : '';
+    const lv = get('level').toLowerCase(), level = LV.find(l => l.toLowerCase() === lv);
+    const q = get('question');
+    const opts = ['a','b','c','d','e','f'].map(x => get('option_' + x));
+    const last = opts.reduce((m, o, i) => o ? i : m, -1), o = opts.slice(0, last + 1);
+    const ans = get('answer').toUpperCase(), ai = Q_LETTERS.indexOf(ans);
+    const bad = [];
+    if (!level) bad.push('level must be Easy, Medium or Hard');
+    if (!q) bad.push('question is empty');
+    if (o.length < 2) bad.push('needs at least options A and B');
+    else if (o.some(x => !x)) bad.push('options must be filled in order with no gaps (option ' + Q_LETTERS[o.indexOf('')] + ' is empty)');
+    if (ans.length !== 1 || ai < 0) bad.push('answer must be one letter A to F');
+    else if (ai >= o.length) bad.push('answer ' + ans + ' points to an empty option');
+    if (bad.length) errs.push('Row ' + line + ': ' + bad.join('; ') + '.');
+    else { qs.push({l: level, q, o}); answers.push(ai); }
+  });
+  if (!errs.length && !qs.length) errs.push('The file has a header but no questions.');
+  return {qs, answers, errs};
+}
+let qPending = null;
+function paintQs(){
+  if (!isAdmin) return;
+  const lc = lvCount();
+  $('qCount').textContent = N ? '· ' + N + ' (Easy ' + lc.e + ', Medium ' + lc.m + ', Hard ' + lc.h + ')' + (key ? '' : ' · no key') : '· none yet';
+  $('qFile').disabled = eff() === 'live';
+}
+function qReset(){ qPending = null; $('qFile').value = ''; $('qErrBox').hidden = true; $('qOkBox').hidden = true; }
+$('qFile').onchange = async () => {
+  const f = $('qFile').files[0]; $('qErrBox').hidden = true; $('qOkBox').hidden = true; qPending = null;
+  if (!f) return;
+  if (!/\.csv$/i.test(f.name)){ $('qErrT').textContent = 'Choose a .csv file.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; return; }
+  const r = readQuestions(await f.text());
+  if (r.errs.length){
+    $('qErrT').textContent = 'Nothing was saved. Fix ' + (r.errs.length === 1 ? 'this problem' : 'these ' + r.errs.length + ' problems') + ' and upload again:';
+    $('qErrs').innerHTML = r.errs.slice(0, 15).map(e => '<li>' + esc(e) + '</li>').join('') + (r.errs.length > 15 ? '<li>…and ' + (r.errs.length - 15) + ' more.</li>' : '');
+    $('qErrBox').hidden = false; return;
+  }
+  qPending = r;
+  const c = l => r.qs.filter(q => q.l === l).length;
+  const old = results.filter(x => (x.track || 'pharmacist') === TR).length;
+  $('qOkT').textContent = f.name + ': ' + r.qs.length + ' questions (Easy ' + c('Easy') + ', Medium ' + c('Medium') + ', Hard ' + c('Hard') + '), each with an answer. Saving replaces the current ' + (N || 'no') + ' questions and the answer key.'
+    + (old ? ' ' + old + ' stored attempt' + (old > 1 ? 's' : '') + ' will be marked against the new key; clear results first if this is a new question set.' : '');
+  $('qOkBox').hidden = false; $('qSave').focus();
+};
+$('qCancel').onclick = qReset;
+$('qSave').onclick = async () => {
+  if (!qPending) return;
+  if (eff() === 'live'){ $('qErrT').textContent = 'End the exam before changing its questions.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; return; }
+  const b = $('qSave'), r = qPending; b.disabled = true; b.textContent = 'Saving…';
+  try {
+    await db.doc('questions/' + TR).set({qs: r.qs, updatedAt: Date.now()});
+    await db.doc(T.key).set({answers: r.answers});
+    setQs(TR, r.qs); qReset(); paintAdmin(); paintQs();
+    msg(r.qs.length + ' questions and their answer key saved for the ' + T.name + '.');
+  } catch(e){ $('qErrT').textContent = 'Could not save: ' + errText(e) + '. Try again.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; }
+  b.disabled = false; b.textContent = 'Save questions and key';
+};
+async function qDownload(filename, rows){
+  try { const d = await claude.use('downloads'); await d.save({filename, data: new TextEncoder().encode('﻿' + toCsv(rows)).buffer}); }
+  catch(e){ msg('The download is not available in this view.'); }
+}
+$('qSample').onclick = () => qDownload('questions_sample.csv', [Q_COLS,
+  ['Easy', 'Metformin belongs to which drug class?', 'Sulfonylurea', 'Biguanide', 'Thiazolidinedione', 'DPP-4 inhibitor', '', '', 'B'],
+  ['Medium', 'Which test best reflects average blood glucose over the last 2–3 months?', 'Fasting glucose', 'Random glucose', 'HbA1c', 'Fructosamine', '', '', 'C'],
+  ['Hard', 'A question with a comma, "quotes" and only three options?', 'First option', 'Second option', 'Third option', '', '', '', 'A']]);
+$('qExport').onclick = () => {
+  if (!N){ msg('There are no questions to download yet.'); return; }
+  const k = key && key.answers;
+  qDownload(TR + '_questions.csv', [Q_COLS].concat(QS.map((q, i) => [q.l, q.q].concat([0,1,2,3,4,5].map(j => q.o[j] || ''), [k && k[i] >= 0 ? Q_LETTERS[k[i]] : '']))));
+};
+setInterval(paintQs, 1000);
 </script>

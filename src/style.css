@@ -174,3 +174,9 @@ td.num,th.num{text-align:right}
 .pv-in{max-width:1120px;margin:0 auto;display:flex;gap:10px 16px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding-block:8px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 .pvcode{font-family:var(--font-mono);letter-spacing:.15em}
 .pvscore{border:1px solid var(--edge-brand);background:var(--tint-brand);border-radius:var(--r-md);padding:14px;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+
+/* invigilator sign-in gate */
+.gate{position:fixed;inset:0;z-index:50;overflow:auto;background:var(--surface-1);padding:48px 16px}
+.gate .col{margin:0 auto}
+.signout{margin-left:12px;background:none;border:0;padding:0;color:inherit;font:inherit;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer}
+.qerr{margin:0;padding-left:18px;font-size:13px}

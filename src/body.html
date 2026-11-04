@@ -13,6 +13,28 @@
 
 <main>
 <!-- SIGN IN -->
+<!-- INVIGILATOR SIGN-IN (Firebase email and password; shown only with ?admin) -->
+<div id="adminGate" class="gate" hidden>
+  <section class="col">
+    <div class="card stack">
+      <div class="stack s8">
+        <span class="eyebrow">Invigilator</span>
+        <h1>Sign in</h1>
+        <p class="muted">Only invigilators sign in here. Staff taking the test do not need an account.</p>
+      </div>
+      <p class="notice bad" id="gErr" role="alert" hidden></p>
+      <form id="gForm" class="stack" novalidate>
+        <div class="field"><label for="gEmail">Email</label>
+          <input class="input" id="gEmail" type="email" autocomplete="username" required></div>
+        <div class="field"><label for="gPass">Password</label>
+          <input class="input" id="gPass" type="password" autocomplete="current-password" required></div>
+        <button class="btn btn-lg" type="submit" id="gBtn">Sign in</button>
+        <button class="btn btn-ghost" type="button" id="gReset">Forgot password</button>
+      </form>
+    </div>
+  </section>
+</div>
+
 <section id="sLogin" class="col" hidden>
   <div class="card stack">
     <div class="stack s8">
@@ -167,13 +189,26 @@
           <div class="row"><button class="btn btn-danger" id="aEndYes">End exam now</button><button class="btn btn-ghost" id="aEndNo">Keep running</button></div>
         </div>
       </div>
-      <div class="stack s8" id="aShare"><span class="eyebrow" id="aShareT">Exam link</span><div class="row"><input class="input" id="aLink" type="text" readonly value="" aria-label="Exam link" style="flex:1;min-width:220px"><button class="btn" id="aCopy" type="button">Copy link</button><a class="btn btn-ghost" id="aWa" href="https://wa.me/" target="_blank" rel="noopener">Share on WhatsApp</a></div><p class="help">Staff can open this link only after you invite them from this page's Share menu with permission to use it.</p></div>
+      <div class="stack s8" id="aShare"><span class="eyebrow" id="aShareT">Exam link</span><div class="row"><input class="input" id="aLink" type="text" readonly value="" aria-label="Exam link" style="flex:1;min-width:220px"><button class="btn" id="aCopy" type="button">Copy link</button><a class="btn btn-ghost" id="aWa" href="https://wa.me/" target="_blank" rel="noopener">Share on WhatsApp</a></div><p class="help">Staff open this link at exam time and type the security code after their details.</p></div>
       <p class="err" id="aErr" role="alert"></p>
     </div>
     <div class="card stack">
       <span class="eyebrow">Live count</span>
       <div class="stats" id="aStats"></div>
       <p class="help" id="aKeyNote"></p>
+    </div>
+  </div>
+  <div class="card stack" style="margin-top:16px" id="qCard">
+    <div class="row between">
+      <h2>Questions and answer key <span class="muted small" id="qCount"></span></h2>
+      <div class="row"><button class="btn btn-sm btn-ghost" id="qSample" type="button">Sample CSV</button><button class="btn btn-sm btn-quiet" id="qExport" type="button">Download current</button></div>
+    </div>
+    <p class="help">Upload a .csv file with one question per row: level, question, options A to D (E and F optional) and the correct option letter. Uploading replaces all questions and the answer key for this assessment. You can't upload while an exam is live.</p>
+    <div class="row"><input class="input" id="qFile" type="file" accept=".csv,text/csv" aria-label="Questions CSV file" style="flex:1;min-width:220px"></div>
+    <div class="notice bad stack s8" id="qErrBox" role="alert" hidden><b id="qErrT"></b><ul class="qerr" id="qErrs"></ul></div>
+    <div class="notice info stack s8" id="qOkBox" role="status" hidden>
+      <span id="qOkT"></span>
+      <div class="row"><button class="btn" id="qSave" type="button">Save questions and key</button><button class="btn btn-ghost" id="qCancel" type="button">Cancel</button></div>
     </div>
   </div>
   <div class="card stack" style="margin-top:16px">
