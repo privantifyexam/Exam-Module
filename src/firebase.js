@@ -4,14 +4,7 @@
    trying to read key/code, which only invigilators may read. */
 (() => {
   if (window.claude) return;   // tests (tests/stub.js) or the Claude artifact host already provide it
-  const cfg = {
-    apiKey: 'AIzaSyBdQv7kppzAEpGJ5GiItT31ttJFI2BzjYE',
-    authDomain: 'privantifyexam-be483.firebaseapp.com',
-    projectId: 'privantifyexam-be483',
-    storageBucket: 'privantifyexam-be483.firebasestorage.app',
-    messagingSenderId: '117793467742',
-    appId: '1:117793467742:web:e90fcc4b5b6a652088f3cf'
-  };
+  const cfg = __FIREBASE_CONFIG__;   // filled in by build.py from .env
   const wantAdmin = new URLSearchParams(location.search).has('admin');
   const el = id => document.getElementById(id);
   const AUTH_MSG = {

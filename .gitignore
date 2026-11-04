@@ -5,3 +5,8 @@ node_modules/
 .DS_Store
 .firebase/
 *.csv
+# secrets and files built from them (run python3 build.py)
+.env
+dist/
+firestore.rules
+.firebaserc

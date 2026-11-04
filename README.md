@@ -17,13 +17,21 @@ Timed online staff assessments for SugarCARE Clinics (HomoRx Healthtech). Today 
 | `src/questions_pharmacist.js` | the 50 pharmacist questions (no answers) |
 | `src/assets/` | design tokens and logo |
 | `build.py` | builds the single-file page |
-| `dist/index.html` | built page, as published |
+| `dist/index.html` | built page (generated, not committed) |
 | `tests/` | Playwright checks run against a stub database |
+
+## Settings (.env)
+Firebase settings and the invigilator emails live in `.env`, which is never committed. Copy the template and fill it in from Firebase console → Project settings → Your apps:
+```
+cp .env.example .env
+```
 
 ## Build
 ```
-python3 build.py        # writes dist/index.html
+python3 build.py        # writes dist/index.html, firestore.rules and .firebaserc from .env
+firebase deploy --only firestore:rules
 ```
+Edit `firestore.rules.template`, not `firestore.rules`.
 
 ## Data (Claude artifact database)
 | Document | Holds | Read | Write |
