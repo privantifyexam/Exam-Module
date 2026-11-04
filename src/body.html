@@ -1,0 +1,200 @@
+<header class="top">
+  <div class="top-in">
+    <span class="logo"><img src="__LOGO__" alt="SugarCARE Clinics" width="182" height="44"></span>
+    <div class="top-r"><span class="eyebrow" id="topName">Assessment</span><span class="who" id="who"></span></div>
+  </div>
+  <hr class="sc-rule">
+</header>
+<div class="pvbar" id="pvBar" role="status" hidden><div class="pv-in">
+  <span><b>Test mode</b> · nothing is saved or added to the mark list · demo security code <b class="pvcode" id="pvCode">------</b></span>
+  <span class="row"><button class="btn btn-sm btn-ghost" id="pvRestart" type="button">Restart test</button><button class="btn btn-sm" id="pvExit" type="button">Exit test mode</button></span>
+</div></div>
+<div class="sr" id="sr" aria-live="polite"></div>
+
+<main>
+<!-- SIGN IN -->
+<section id="sLogin" class="col" hidden>
+  <div class="card stack">
+    <div class="stack s8">
+      <span class="eyebrow">Step 1 of 2 · Your details</span>
+      <h1>Join the assessment</h1>
+      <p class="muted" id="lBlurb"></p>
+    </div>
+    <div><span id="stChip" class="chip idle"><i class="dot"></i><span>Connecting…</span></span></div>
+    <p class="notice bad" id="loginErr" role="alert" hidden></p>
+    <form id="loginForm" class="stack" autocomplete="off" novalidate>
+      <div class="field"><label for="fName">Full name</label>
+        <input class="input" id="fName" type="text" maxlength="60" autocomplete="off" aria-describedby="fNameErr" placeholder="e.g. Anitha Menon">
+        <p class="ferr" id="fNameErr" hidden></p></div>
+      <div class="field"><label for="fPhone">Mobile number</label>
+        <input class="input" id="fPhone" type="tel" inputmode="tel" maxlength="15" autocomplete="off" aria-describedby="fPhoneHelp fPhoneErr" placeholder="10-digit number">
+        <p class="help" id="fPhoneHelp">The invigilator uses this to match your marks.</p>
+        <p class="ferr" id="fPhoneErr" hidden></p></div>
+      <div class="field"><label for="fPos">Position</label>
+        <select class="input" id="fPos" aria-describedby="fPosErr"></select>
+        <p class="ferr" id="fPosErr" hidden></p></div>
+      <button class="btn btn-lg" type="submit" id="loginBtn">Continue</button>
+    </form>
+  </div>
+</section>
+
+<!-- SECURITY CODE -->
+<section id="sCode" class="col" hidden>
+  <div class="card stack">
+    <div class="stack s8">
+      <span class="eyebrow">Step 2 of 2 · Security code</span>
+      <h1>Enter the security code</h1>
+      <p class="muted">The invigilator shares a 6-character code when the exam opens. Type it here to unlock your test.</p>
+    </div>
+    <div><span id="cChip" class="chip idle"><i class="dot"></i><span></span></span></div>
+    <form id="codeForm" class="stack" autocomplete="off" novalidate>
+      <div class="field"><label for="fCode">Security code</label>
+        <input class="input code" id="fCode" type="text" maxlength="6" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" aria-describedby="fCodeHelp fCodeErr" placeholder="------">
+        <p class="help" id="fCodeHelp"></p>
+        <p class="ferr" id="fCodeErr" hidden></p></div>
+      <button class="btn btn-lg" type="submit" id="codeBtn">Verify code</button>
+    </form>
+    <button class="btn btn-quiet" id="codeBack" type="button">Back to your details</button>
+  </div>
+</section>
+
+<!-- READY -->
+<section id="sReady" class="col" hidden>
+  <div class="card stack">
+    <div class="stack s8">
+      <span class="eyebrow">Before you start</span>
+      <h1 id="rHello">Hello</h1>
+      <div><span id="rChip" class="chip idle"><i class="dot"></i><span></span></span></div>
+    </div>
+    <div class="facts">
+      <div class="fact"><b id="rN">50</b><span>questions</span></div>
+      <div class="fact"><b>33 s</b><span>per question</span></div>
+      <div class="fact"><b id="rWin">–</b><span>exam window left</span></div>
+    </div>
+    <ul class="rules">
+      <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>Pick one answer and press <b>Next</b>, or let the 33 seconds run out. Unanswered questions score zero. There is no negative marking.</span></li>
+      <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg><span>You cannot go back to an earlier question.</span></li>
+      <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg><span>If you refresh the page, the timer keeps running. Keep this page open until you finish.</span></li>
+      <li><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg><span>Stay on this page during the test. Switching to another app or tab, or locking your phone, is recorded and shown to the invigilator. Your marks are not shown to you. The invigilator shares the results.</span></li>
+    </ul>
+    <p class="notice warn" id="rLate" role="status" hidden>The exam window closes before a full test can finish. Questions you have not reached will be marked unanswered.</p>
+    <div class="stack s8">
+      <button class="btn btn-lg" id="beginBtn" disabled>Start my test</button>
+      <p class="muted center" id="rWait"></p>
+    </div>
+    <button class="btn btn-quiet" id="backBtn" type="button">Not you? Change details</button>
+  </div>
+</section>
+
+<!-- QUIZ -->
+<section id="sQuiz" class="col" hidden>
+  <div class="card quiz">
+    <div id="saveBanner" class="notice warn" role="status" hidden>Your answers are not reaching the server. Check your internet connection. The test keeps running and will try again.</div>
+    <div id="awayBanner" class="notice warn" role="alert" hidden><span></span><button class="btn btn-quiet btn-sm" id="awayX" type="button">OK</button></div>
+    <div class="qhead">
+      <div class="qcount"><span class="eyebrow">Question</span><div><b id="qNo">1</b><span class="muted" id="qOf"> of 50</span></div></div>
+      <div class="timer" id="qTimer" role="timer" aria-label="Seconds left for this question">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><circle class="bg" cx="32" cy="32" r="27"/><circle class="fg" id="qRing" cx="32" cy="32" r="27"/></svg>
+        <b id="qClock">33</b>
+      </div>
+    </div>
+    <div class="segs" id="qSegs" aria-hidden="true"></div>
+    <p class="segnote" id="qNote"></p>
+    <h2 class="qtext" id="qText" tabindex="-1"></h2>
+    <div class="opts" id="qOpts" role="radiogroup" aria-labelledby="qText"></div>
+    <div class="qfoot">
+      <span class="hint" id="qHint">Keys A–D or 1–4 choose. Enter moves on.</span>
+      <span class="saved" id="qSaved"></span>
+      <button class="btn btn-lg" id="nextBtn">Next question</button>
+    </div>
+  </div>
+</section>
+
+<!-- DONE -->
+<section id="sDone" class="col" hidden>
+  <div class="card center stack">
+    <div class="stack s8">
+      <div class="bigtick" id="dTick"><svg viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <h1 id="dTitle">Test submitted</h1>
+      <p class="muted" id="dMsg">Thank you. Your answers are recorded. The invigilator will share the results.</p>
+    </div>
+    <p class="pvscore" id="dScore" hidden></p>
+    <p class="savestate" id="dSave" role="status"></p>
+    <div class="stack s8">
+      <button class="btn btn-lg" id="retryBtn" hidden>Try saving again</button>
+      <button class="btn btn-ghost" id="doneBtn">Return to sign-in</button>
+    </div>
+  </div>
+</section>
+
+<!-- ALL ASSESSMENTS -->
+<section id="sHome" hidden>
+  <div class="admin-head"><div class="stack s8"><span class="eyebrow">Invigilator</span><h1>Assessments</h1><p class="muted">Each assessment has its own exam link, timer, security code and mark list.</p></div></div>
+  <div class="homegrid" id="hCards"></div>
+</section>
+
+<!-- INVIGILATOR -->
+<section id="sAdmin" hidden>
+  <div class="admin-head">
+    <div class="stack s8"><button class="btn btn-quiet btn-sm back" id="aHome" type="button">All assessments</button><h1 id="aTitle">Assessment</h1></div>
+    <div class="row"><button class="btn btn-ghost" id="aTry" type="button">Try test mode</button><span id="aChip" class="chip idle"><i class="dot"></i><span></span></span></div>
+  </div>
+  <div class="notice warn" id="aNoQs" role="status" hidden>This assessment has no questions yet. Start exam stays off until its questions and answer key are added.</div>
+  <div class="notice bad" id="aKeyWarn" role="alert" hidden>The answer key was not found, so scores cannot be worked out. Marks appear as soon as the key is saved.</div>
+  <div class="notice info" id="aMsg" role="status" hidden><span id="aMsgT"></span><button class="btn btn-quiet btn-sm" id="aMsgX" type="button">Dismiss</button></div>
+  <div class="grid2">
+    <div class="card stack">
+      <span class="eyebrow">Exam control</span>
+      <div>
+        <div class="bigclock" id="aBig">–</div>
+        <p class="muted" id="aTimes"></p>
+      </div>
+      <div class="stack" id="aIdle">
+        <div class="field" style="max-width:220px"><label for="aMins">Exam window (minutes)</label><input class="input" id="aMins" type="number" min="5" max="180" value="35" inputmode="numeric"></div>
+        <p class="help" id="aNeed"></p>
+        <p class="notice warn" id="aMinsWarn" hidden></p>
+        <div><button class="btn btn-lg" id="aStart">Start exam</button></div>
+      </div>
+      <div class="stack" id="aLiveRow" hidden>
+        <div class="codebox stack s8">
+          <span class="eyebrow">Security code</span>
+          <div class="row"><b class="seccode" id="aCode">------</b><button class="btn btn-sm btn-ghost" id="aCodeCopy" type="button">Copy code</button><button class="btn btn-sm btn-quiet" id="aCodeNew" type="button">Generate new code</button></div>
+          <p class="help">Share this code when the exam starts, by reading it out or on WhatsApp. Staff type it after their details. A new code stops the old one working; anyone already taking the test carries on.</p>
+        </div>
+        <div><button class="btn btn-danger" id="aEnd">End exam now</button></div>
+        <div class="notice bad stack s8" id="aEndBox" hidden>
+          <span id="aEndText"></span>
+          <div class="row"><button class="btn btn-danger" id="aEndYes">End exam now</button><button class="btn btn-ghost" id="aEndNo">Keep running</button></div>
+        </div>
+      </div>
+      <div class="stack s8" id="aShare"><span class="eyebrow" id="aShareT">Exam link</span><div class="row"><input class="input" id="aLink" type="text" readonly value="" aria-label="Exam link" style="flex:1;min-width:220px"><button class="btn" id="aCopy" type="button">Copy link</button><a class="btn btn-ghost" id="aWa" href="https://wa.me/" target="_blank" rel="noopener">Share on WhatsApp</a></div><p class="help">Staff can open this link only after you invite them from this page's Share menu with permission to use it.</p></div>
+      <p class="err" id="aErr" role="alert"></p>
+    </div>
+    <div class="card stack">
+      <span class="eyebrow">Live count</span>
+      <div class="stats" id="aStats"></div>
+      <p class="help" id="aKeyNote"></p>
+    </div>
+  </div>
+  <div class="card stack" style="margin-top:16px">
+    <div class="row between">
+      <h2>Mark list <span class="muted small" id="aCount"></span></h2>
+      <div class="row"><div class="dl" role="group" aria-label="Download mark list"><span class="dl-l">Download</span><button class="btn btn-sm btn-ghost" data-dl="csv">CSV</button><button class="btn btn-sm btn-ghost" data-dl="xlsx">Excel</button><button class="btn btn-sm btn-ghost" data-dl="pdf">PDF</button></div><button class="btn btn-sm btn-quiet" id="aClear">Clear all results</button></div>
+    </div>
+    <div class="notice bad stack s8" id="aClearBox" role="alertdialog" aria-labelledby="aClearText" hidden>
+      <span id="aClearText"></span>
+      <div class="row"><button class="btn btn-danger" id="aClearYes">Delete all results</button><button class="btn btn-ghost" id="aClearNo">Cancel</button></div>
+    </div>
+    <div class="row filters">
+      <div class="field grow"><label class="sr-only" for="aSearch">Search name or phone</label><input class="input" id="aSearch" type="search" placeholder="Search name or phone" autocomplete="off"></div>
+      <div class="seg" role="group" aria-label="Filter by status">
+        <button type="button" data-f="all" aria-pressed="true">All <span id="cAll">0</span></button>
+        <button type="button" data-f="run" aria-pressed="false">In progress <span id="cRun">0</span></button>
+        <button type="button" data-f="sub" aria-pressed="false">Submitted <span id="cSub">0</span></button>
+      </div>
+    </div>
+    <p class="help legend"><span class="pct hi">70%+</span> <span class="pct mid">50–69%</span> <span class="pct lo">Under 50%</span> Only each person's first attempt is counted. Left test = times they switched app, tab or locked the screen.</p>
+    <div class="tw"><table><thead><tr><th>Rank &amp; name</th><th>Phone</th><th>Position</th><th class="num" id="thS">Score /50</th><th class="num">%</th><th class="num" id="thE">Easy /35</th><th class="num" id="thM">Med /10</th><th class="num" id="thH">Hard /5</th><th class="num">Left test</th><th>Status</th></tr></thead><tbody id="aBody"></tbody></table></div>
+  </div>
+</section>
+</main>

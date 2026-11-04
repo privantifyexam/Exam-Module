@@ -1,0 +1,291 @@
+/* --------------------------------------------------------------------------
+   1. Tokens
+   -------------------------------------------------------------------------- */
+:root {
+  /* ---- Brand ----------------------------------------------------------
+     Purple is split by ROLE, because the two roles need opposite treatment
+     once a dark theme exists:
+       --sc-purple  FILL   — solid backgrounds that carry white text
+       --brand-fg   INK    — purple used as text, icons, borders, accents
+     In light mode both are the same value; in dark they diverge (a fill
+     bright enough for white text is far too dark to read as text itself). */
+  --sc-purple:        #4A2FA0;   /* fill */
+  --brand-fg:         #4A2FA0;   /* ink  */
+  --sc-purple-hover:  #3E2688;
+  --sc-purple-soft:   #6B52BC;
+  --sc-orange:        #E86A1A;
+  --sc-orange-hover:  #D25E12;
+
+  /* Text colour for anything sitting on the orange accent fill. Fixed in both
+     themes because the accent fill is orange in both. */
+  --on-accent:        #1A0E50;
+  /* Orange as TEXT (not as fill). Brand #E86A1A measures only 2.9:1 on the
+     orange-10 tint, so foreground orange gets its own darker light value.
+     The wordmark keeps the exact brand orange — logotypes are exempt. */
+  --accent-ink:       #B4500C;
+
+  /* Printable documents stay white paper in every theme */
+  --paper-bg:         #FFFFFF;
+
+  /* Ink */
+  --sc-ink:           #1A0E50;
+  --sc-muted:         #5C5478;
+  /* darkened from the baseline #8B84A3, which measured 3.1–3.5:1 on card
+     surfaces — under AA for the 11–12px metadata it carries (LAB IDs, doctor
+     names, KPI captions). #6E668C measures 4.6–5.3:1 and reads the same. */
+  --sc-faint:         #6E668C;
+
+  /* ---- Surface ladder ------------------------------------------------
+     L0 app canvas → L1 grouping section → L2 card → L3 row → L4 floating.
+     Depth comes from these steps + borders, NOT from stacked shadows. */
+  --surface-0:        #F4F5FB;   /* L0 · application canvas          */
+  --surface-1:        #FAFAFD;   /* L1 · neutral grouping section    */
+  --surface-2:        #FFFFFF;   /* L2 · card                        */
+  --surface-3:        #FFFFFF;   /* L3 · data row sheet              */
+
+  --sc-bg:            var(--surface-0);
+  --sc-surface:       #FFFFFF;
+  --sc-row-alt:       #F8F7FB;
+  --sc-sunken:        #F2F3F9;
+
+  /* Lines */
+  --sc-border:        #E8E5F1;
+  --sc-border-strong: #D9D5E8;
+
+  /* 10% brand tints */
+  --sc-purple-10:     rgba(74, 47, 160, 0.10);
+  --sc-purple-06:     rgba(74, 47, 160, 0.06);
+  --sc-orange-10:     rgba(232, 106, 26, 0.10);
+
+  /* ---- Semantic tint scale (3–8%) ------------------------------------
+     Container-level SURFACES, never fills. Kept at low alpha so a tinted
+     card still reads as white-dominant and the KPI number stays the
+     strongest element on the card. Each tint has a matching edge. */
+  --tint-brand:       rgba( 74,  47, 160, 0.040);
+  --tint-brand-lift:  rgba( 74,  47, 160, 0.065);
+  --tint-violet:      rgba(107,  82, 188, 0.055);
+  --tint-amber:       rgba(217, 119,   6, 0.055);
+  --tint-mint:        rgba( 16, 185, 129, 0.055);
+  --tint-green:       rgba( 22, 163,  74, 0.050);
+  --tint-red:         rgba(220,  38,  38, 0.045);
+  --tint-red-lift:    rgba(220,  38,  38, 0.055);
+  --tint-blue:        rgba( 37,  99, 235, 0.050);
+  --tint-slate:       rgba(100, 116, 139, 0.045);
+
+  --edge-brand:       rgba( 74,  47, 160, 0.16);
+  --edge-violet:      rgba(107,  82, 188, 0.20);
+  --edge-amber:       rgba(217, 119,   6, 0.22);
+  --edge-mint:        rgba( 16, 185, 129, 0.22);
+  --edge-green:       rgba( 22, 163,  74, 0.20);
+  --edge-red:         rgba(220,  38,  38, 0.20);
+  --edge-blue:        rgba( 37,  99, 235, 0.20);
+  --edge-slate:       rgba(100, 116, 139, 0.18);
+
+  /* ---- Semantic status -------------------------------------------------
+     ONE colour per state. Family assignment:
+       purple → active workflow / structural   amber → waiting / action needed
+       green  → ready / done / positive        red   → urgent / critical / overdue
+       blue   → informational / collected      grey  → inactive / historical
+     Orange (#E86A1A) is deliberately absent here: it stays reserved for the
+     brand wordmark, the signature rule and high-value CTAs. */
+  --st-pending-fg:    #92400E;  --st-pending-bg:    #FEF3C7;  --st-pending-dot: #D97706;
+  --st-pending-edge:  rgba(217, 119, 6, 0.28);
+  --st-collected-fg:  #1E40AF;  --st-collected-bg:  #DBEAFE;  --st-collected-dot: #2563EB;
+  --st-collected-edge:rgba( 37,  99, 235, 0.26);
+  --st-processing-fg: #4A2FA0;  --st-processing-bg: #EDE9F9;  --st-processing-dot: #6B52BC;
+  --st-processing-edge:rgba(74,  47, 160, 0.24);
+  /* ready moved out of teal into the green family so ready → approved reads
+     as one progression rather than two unrelated hues */
+  --st-ready-fg:      #047857;  --st-ready-bg:      #D1FAE5;  --st-ready-dot: #10B981;
+  --st-ready-edge:    rgba( 16, 185, 129, 0.28);
+  --st-approved-fg:   #14532D;  --st-approved-bg:   #DCFCE7;  --st-approved-dot: #15803D;
+  --st-approved-edge: rgba( 22, 163,  74, 0.26);
+  --st-delivered-fg:  #475569;  --st-delivered-bg:  #E9EDF3;  --st-delivered-dot: #64748B;
+  --st-delivered-edge:rgba(100, 116, 139, 0.24);
+
+  /* Exception states — all share the single red-coral family */
+  --sc-danger-fg:     #B91C1C;  --sc-danger-bg:     #FEE2E2;  --sc-danger-dot: #DC2626;
+  --sc-danger-edge:   rgba(220,  38,  38, 0.26);
+  /* aliased to the pending amber so "waiting" is never two ambers */
+  --sc-warn-fg:       var(--st-pending-fg);
+  --sc-warn-bg:       var(--st-pending-bg);
+  --sc-warn-edge:     var(--st-pending-edge);
+  /* aliased to the approved green so "done" is never two greens */
+  --sc-ok-fg:         var(--st-approved-fg);
+  --sc-ok-bg:         var(--st-approved-bg);
+  --sc-ok-edge:       var(--st-approved-edge);
+
+  /* Result-entry field states */
+  --field-abn-bg:     #FFF8F8;  --field-abn-edge:  #F0A9A9;
+  --field-crit-bg:    #FFF9F4;  --field-crit-fg:   var(--accent-ink);
+  --field-ok-bg:      #FAFFFC;  --field-ok-edge:   #9FD8B8;
+
+  /* TAT / SLA pressure ramp */
+  --tat-ok-fg:        #15803D;
+  --tat-warn-fg:      #B45309;
+  --tat-late-fg:      #B91C1C;
+
+  /* Geometry */
+  --r-sm:  8px;
+  --r-md:  12px;
+  --r-lg:  16px;
+  --r-xl:  20px;
+  --r-pill: 999px;
+
+  /* Elevation — feather-light only */
+  --sh-1: 0 1px 2px rgba(26, 14, 80, 0.04);
+  --sh-2: 0 2px 8px rgba(26, 14, 80, 0.06);
+  --sh-3: 0 8px 28px rgba(26, 14, 80, 0.10);
+
+  /* Type */
+  --font: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-ml: 'Noto Sans Malayalam', 'Plus Jakarta Sans', sans-serif;
+  --font-mono: 'SFMono-Regular', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+
+  /* Layout */
+  --sidebar-w: 244px;
+  --topbar-h: 62px;
+  --rail-w: 296px;
+
+  /* Navigation surface (differentiated from the canvas in dark) */
+  --surface-nav:      #FFFFFF;
+  --scroll-thumb:     #DAD6E8;
+  --scroll-thumb-hi:  #C4BEDA;
+  --overlay-veil:     rgba(26, 14, 80, .36);
+  --glass:            rgba(255, 255, 255, 0.88);
+  --glass-solid:      rgba(255, 255, 255, 0.94);
+  --lane-bg:          rgba(233, 235, 244, .55);
+  --stage-bg:         #EDEEF4;
+  --toast-bg:         #1A0E50;
+  --toast-fg:         #FFFFFF;
+  --select-arrow:     '%235C5478';
+}
+
+/* ==========================================================================
+   1b. DARK THEME
+   --------------------------------------------------------------------------
+   Architecture: a single token override block on [data-theme="dark"].
+   An inline <head> script resolves the theme BEFORE first paint (saved
+   preference → OS prefers-color-scheme → light), so there is no flash and
+   CSS never needs to duplicate a prefers-color-scheme block.
+
+   Designed for dark, not inverted from light:
+     · surfaces are neutral-purple, never #000 and never pure grey
+     · text tops out at #E9E6F5, never #FFF, to cut halation on dark
+     · semantic hues are DESATURATED and LIFTED — a colour that reads well
+       on white is muddy on dark, so each family gets its own dark value
+     · tints stay 8–11% (slightly higher than light's 3–8%, because low-alpha
+       colour over a dark base loses far more perceived chroma)
+   ========================================================================== */
+:root[data-theme="dark"] {
+  /* Brand — the fill/ink split earns its keep here */
+  --sc-purple:        #6D4FD6;   /* fill: white text on this passes AA (5.6:1) */
+  --brand-fg:         #B9A5FF;   /* ink: readable on every dark surface       */
+  --sc-purple-hover:  #7C60E0;
+  --sc-purple-soft:   #8B72E4;
+  --sc-orange:        #F08A44;   /* lifted so it survives on dark             */
+  --sc-orange-hover:  #F79A57;
+  --accent-ink:       #F5A05F;
+
+  /* Surface ladder — L0 canvas → L4 floating */
+  --surface-0:        #131120;
+  --surface-1:        #1A1728;
+  --surface-2:        #201C30;
+  --surface-3:        #262138;
+  --surface-4:        #2E2842;
+  --surface-nav:      #171422;
+
+  --sc-bg:            var(--surface-0);
+  --sc-surface:       var(--surface-2);
+  --sc-row-alt:       #241F35;
+  --sc-sunken:        #1E1A2C;
+
+  /* Ink — deliberately short of pure white */
+  --sc-ink:           #E9E6F5;
+  --sc-muted:         #B4ADCE;
+  /* lifted from the first-pass #7D7599: it measured 3.6:1 on row surfaces,
+     under AA for 12px metadata (LAB IDs, doctor names, TAT captions) */
+  --sc-faint:         #ABA3C6;
+
+  --sc-border:        #2F2942;
+  --sc-border-strong: #413A5C;
+
+  --sc-purple-10:     rgba(139, 114, 246, 0.16);
+  --sc-purple-06:     rgba(139, 114, 246, 0.10);
+  --sc-orange-10:     rgba(240, 138,  68, 0.14);
+
+  /* Semantic tints — container surfaces, still restrained */
+  --tint-brand:       rgba(139, 114, 246, 0.10);
+  --tint-brand-lift:  rgba(139, 114, 246, 0.15);
+  --tint-violet:      rgba(167, 139, 250, 0.11);
+  --tint-amber:       rgba(245, 158,  11, 0.10);
+  --tint-mint:        rgba( 52, 211, 153, 0.09);
+  --tint-green:       rgba( 74, 222, 128, 0.09);
+  --tint-red:         rgba(248, 113, 113, 0.10);
+  --tint-red-lift:    rgba(248, 113, 113, 0.16);
+  --tint-blue:        rgba( 96, 165, 250, 0.10);
+  --tint-slate:       rgba(148, 163, 184, 0.08);
+
+  --edge-brand:       rgba(139, 114, 246, 0.26);
+  --edge-violet:      rgba(167, 139, 250, 0.28);
+  --edge-amber:       rgba(245, 158,  11, 0.28);
+  --edge-mint:        rgba( 52, 211, 153, 0.26);
+  --edge-green:       rgba( 74, 222, 128, 0.24);
+  --edge-red:         rgba(248, 113, 113, 0.28);
+  --edge-blue:        rgba( 96, 165, 250, 0.26);
+  --edge-slate:       rgba(148, 163, 184, 0.20);
+
+  /* Status — same six families, dark-native values */
+  --st-pending-fg:    #FCD34D;  --st-pending-bg:    rgba(217, 119,   6, 0.18);
+  --st-pending-dot:   #F59E0B;  --st-pending-edge:  rgba(245, 158,  11, 0.34);
+  --st-collected-fg:  #A5C9FF;  --st-collected-bg:  rgba( 37,  99, 235, 0.20);
+  --st-collected-dot: #60A5FA;  --st-collected-edge:rgba( 96, 165, 250, 0.34);
+  --st-processing-fg: #CBBAFF;  --st-processing-bg: rgba(124,  92, 230, 0.22);
+  --st-processing-dot:#A78BFA;  --st-processing-edge:rgba(167, 139, 250, 0.34);
+  --st-ready-fg:      #6EE7B7;  --st-ready-bg:      rgba( 16, 185, 129, 0.18);
+  --st-ready-dot:     #34D399;  --st-ready-edge:    rgba( 52, 211, 153, 0.32);
+  --st-approved-fg:   #86EFAC;  --st-approved-bg:   rgba( 22, 163,  74, 0.20);
+  --st-approved-dot:  #4ADE80;  --st-approved-edge: rgba( 74, 222, 128, 0.30);
+  --st-delivered-fg:  #CBD5E1;  --st-delivered-bg:  rgba(148, 163, 184, 0.16);
+  --st-delivered-dot: #94A3B8;  --st-delivered-edge:rgba(148, 163, 184, 0.28);
+
+  --sc-danger-fg:     #FCA5A5;  --sc-danger-bg:     rgba(220,  38,  38, 0.20);
+  --sc-danger-dot:    #F87171;  --sc-danger-edge:   rgba(248, 113, 113, 0.32);
+
+  --field-abn-bg:     rgba(220,  38,  38, 0.13);
+  --field-abn-edge:   rgba(248, 113, 113, 0.45);
+  --field-crit-bg:    rgba(240, 138,  68, 0.15);
+  --field-crit-fg:    var(--accent-ink);
+  --field-ok-bg:      rgba( 22, 163,  74, 0.11);
+  --field-ok-edge:    rgba( 74, 222, 128, 0.38);
+
+  --tat-ok-fg:        #4ADE80;
+  --tat-warn-fg:      #FBBF24;
+  --tat-late-fg:      #F87171;
+
+  /* Chrome */
+  --scroll-thumb:     #3A3352;
+  --scroll-thumb-hi:  #4A4268;
+  --overlay-veil:     rgba(6, 4, 14, .62);
+  --glass:            rgba(23, 20, 34, 0.86);
+  --glass-solid:      rgba(23, 20, 34, 0.94);
+  --lane-bg:          rgba(255, 255, 255, .028);
+  --stage-bg:         #0E0C17;
+  --toast-bg:         #322B47;
+  --toast-fg:         #F2EFFA;
+
+  /* Shadows read as depth-by-darkness, not by spread */
+  --sh-1: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --sh-2: 0 2px 10px rgba(0, 0, 0, 0.34);
+  --sh-3: 0 10px 32px rgba(0, 0, 0, 0.48);
+}
+
+/* Theme transition — colour only, so layout never reflows on switch */
+:root.theme-anim,
+:root.theme-anim * {
+  transition: background-color .18s ease, border-color .18s ease, color .18s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  :root.theme-anim, :root.theme-anim * { transition: none; }
+}
+

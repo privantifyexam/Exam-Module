@@ -1,0 +1,5 @@
+__pycache__/
+*.png
+*.pdf
+node_modules/
+.DS_Store
