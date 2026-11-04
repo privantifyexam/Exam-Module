@@ -14,11 +14,13 @@ Timed online staff assessments for SugarCARE Clinics (HomoRx Healthtech). Today 
 | `src/body.html` | page markup |
 | `src/style.css` | styles (SugarCARE design system) |
 | `src/app.js` | all logic |
-| `src/questions_pharmacist.js` | the 50 pharmacist questions (no answers) |
+| `src/firebase.js` | Firebase connection and invigilator sign-in |
+| `src/questions_upload.js` | CSV upload and question viewer |
+| `src/admins.js` | invigilator list |
 | `src/assets/` | design tokens and logo |
 | `build.py` | builds the single-file page |
 | `dist/index.html` | built page (generated, not committed) |
-| `tests/` | Playwright checks run against a stub database |
+| `tests/` | Playwright checks run against a stub database (`tests/stub.js`, with placeholder questions) |
 
 ## Settings (.env)
 Firebase settings and the invigilator emails live in `.env`, which is never committed. Copy the template and fill it in from Firebase console → Project settings → Your apps:

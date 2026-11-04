@@ -29,9 +29,14 @@ service cloud.firestore {
       allow read: if signedIn();
       allow write: if isAdmin();
     }
-    // questions and options (no answers): staff read, invigilator uploads
+    // questions and options (no answers): staff read only while that exam is live, invigilator uploads
+    function examOf(track) { return track == 'pharmacist' ? 'state' : track; }
+    function examLive(track) {
+      let e = get(/databases/$(database)/documents/exam/$(examOf(track))).data;
+      return e.status == 'live' && request.time.toMillis() < e.endsAt;
+    }
     match /questions/{track} {
-      allow read: if signedIn();
+      allow read: if isAdmin() || (signedIn() && examLive(track));
       allow write: if isAdmin();
     }
     // answer keys and plain security codes: invigilator only

@@ -90,9 +90,9 @@ async function qDownload(filename, rows){
   catch(e){ msg('The download is not available in this view.'); }
 }
 $('qSample').onclick = () => qDownload('questions_sample.csv', [Q_COLS,
-  ['Easy', 'Metformin belongs to which drug class?', 'Sulfonylurea', 'Biguanide', 'Thiazolidinedione', 'DPP-4 inhibitor', '', '', 'B'],
-  ['Medium', 'Which test best reflects average blood glucose over the last 2–3 months?', 'Fasting glucose', 'Random glucose', 'HbA1c', 'Fructosamine', '', '', 'C'],
-  ['Hard', 'A question with a comma, "quotes" and only three options?', 'First option', 'Second option', 'Third option', '', '', '', 'A']]);
+  ['Easy', 'Example: which of these is a fruit?', 'Carrot', 'Apple', 'Potato', 'Onion', '', '', 'B'],
+  ['Medium', 'Example: how many minutes are in 2 hours?', '60', '90', '120', '150', '', '', 'C'],
+  ['Hard', 'Example: a question with a comma, "quotes" and only three options?', 'First option', 'Second option', 'Third option', '', '', '', 'A']]);
 $('qExport').onclick = () => {
   if (!N){ msg('There are no questions to download yet.'); return; }
   const k = key && key.answers;

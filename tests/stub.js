@@ -3,6 +3,8 @@
   const fire = () => subs.forEach(f => f());
   const now = Date.now();
   store['exam/state'] = {status:'live', startedAt: now - 120000, endsAt: now + 33*60000, windowMin: 35};
+  // 50 placeholder questions (35 easy, 10 medium, 5 hard); the real ones live only in Firestore
+  store['questions/pharmacist'] = {qs: Array.from({length:50}, (_,i) => ({l: i < 35 ? 'Easy' : i < 45 ? 'Medium' : 'Hard', q: 'Sample question ' + (i+1) + '?', o: ['Option A','Option B','Option C','Option D']}))};
   if (window.__admin) {
     store['key/main'] = {answers: Array(50).fill(1)};
     const names = ['Anitha Menon','Rahul Nair','Fathima K','Joseph Thomas','Sreeja P','Arun Das'];

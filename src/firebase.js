@@ -34,6 +34,7 @@
       el('gForm').onsubmit = async ev => {
         ev.preventDefault(); say(''); btn.disabled = true; btn.textContent = 'Signing in…';
         try {
+          await auth.setPersistence(firebase.auth.Auth.Persistence.SESSION);   // closing the browser signs the invigilator out
           const u = (await auth.signInWithEmailAndPassword(el('gEmail').value.trim(), el('gPass').value)).user;
           pwShow(false);   // never leave the password showing after a sign-in attempt
           if (await isInvigilator(fs)){ el('gPass').value = ''; g.hidden = true; resolve(u); return; }

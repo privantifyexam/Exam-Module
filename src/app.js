@@ -1,8 +1,7 @@
-__QS__
 const SEC = 33, CIRC = 2 * Math.PI * 27;
 const BASE_URL = location.origin + location.pathname;
 const TRACKS = {
-  pharmacist: {name:'Pharmacist assessment', one:'pharmacist', many:'pharmacists', qs:QS_PH, state:'exam/state', key:'key/main', code:'key/code', ls:'sugarcare_session_v1',
+  pharmacist: {name:'Pharmacist assessment', one:'pharmacist', many:'pharmacists', qs:[], state:'exam/state', key:'key/main', code:'key/code', ls:'sugarcare_session_v1',
     positions:['Pharmacist','Senior Pharmacist','Pharmacy Assistant','Pharmacy Technician','Store In-charge','Intern / Trainee','Other']},
   dietitian: {name:'Dietitian assessment', one:'dietitian', many:'dietitians', qs:[], state:'exam/dietitian', key:'key/dietitian', code:'key/dietitian-code', ls:'sugarcare_session_dietitian',
     positions:['Dietitian','Senior Dietitian','Nutritionist','Diabetes Educator','Intern / Trainee','Other']}
@@ -163,10 +162,11 @@ function refreshReady(){
   if (db && eff() === 'live' && !codeOk()) return goCode();
   const s = eff(), left = (exam.endsAt || 0) - Date.now();
   statusChip($('rChip'));
-  $('beginBtn').disabled = !(db && s === 'live');
+  $('beginBtn').disabled = !(db && s === 'live' && N);
   $('rWin').textContent = s === 'live' ? mmss(left) : '–';
   $('rLate').hidden = !(s === 'live' && left < N * SEC * 1000);
   $('rWait').textContent = !db ? 'Cannot reach the exam server right now.'
+    : s === 'live' && !N ? 'The exam is open. Loading the questions…'
     : s === 'live' ? 'The exam is open. Your first question starts as soon as you press Start.'
     : s === 'ended' ? 'This exam has ended. Ask the invigilator what to do next.'
     : 'Keep this page open. The Start button unlocks when the invigilator opens the exam.';
@@ -176,7 +176,7 @@ $('backBtn').onclick = () => {
   sess = null; lsSet(null); whoLine(); show('sLogin'); $('fName').focus();
 };
 $('beginBtn').onclick = () => {
-  if (eff() !== 'live') return;
+  if (eff() !== 'live' || !N) return;
   if (!codeOk()) return goCode();
   sess = Object.assign(sess, {started:true, done:false, examId:String(exam.startedAt), pid:'', i:0, answers:Array(N).fill(-1), sel:-1, away:0, order:makeOrder(), opt:QS.map(q => shuf(q.o.map((_,k) => k))), qStart:Date.now(), t0:Date.now()});
   sess.pid = sess.examId + '_' + sess.phone + '_' + Math.random().toString(36).slice(2,6);
@@ -580,10 +580,18 @@ $('pvRestart').onclick = () => startPreview();
 $('pvExit').onclick = () => exitPreview();
 
 /* ---------- start-up ---------- */
-function onExam(snap){
+// staff can read the questions only while the exam is live (firestore.rules), so fetch them when it opens
+let qsLoading = null;
+function loadLiveQs(){
+  if (T.uploaded || eff() !== 'live') return Promise.resolve();
+  if (!qsLoading) qsLoading = db.doc('questions/' + TR).get().then(q => { if (q.exists && Array.isArray(q.data().qs)) setQs(TR, q.data().qs); }).catch(() => {}).finally(() => { qsLoading = null; refreshReady(); });
+  return qsLoading;
+}
+async function onExam(snap){
   exam = snap.exists ? snap.data() : {status:'idle'};
+  const wait = loadLiveQs();
   statusChip($('stChip')); refreshReady(); refreshCode(); paintAdmin();
-  if (!firstState){ firstState = true; resume(); }
+  if (!firstState){ firstState = true; await wait; resume(); }   // a reload mid-test needs the questions before resuming
 }
 function resume(){
   if (isAdmin) return;
@@ -608,10 +616,6 @@ async function boot(){
     statusChip($('stChip'));
     $('loginErr').textContent = 'Could not reach the exam server. Check your internet connection and open the link again. If it still fails, tell the invigilator.';
     $('loginErr').hidden = false; $('loginBtn').disabled = true; return;
-  }
-  if (!N && !isAdmin){
-    $('loginErr').textContent = 'This assessment is not open yet. Ask the invigilator for the right exam link.';
-    $('loginErr').hidden = false; $('loginBtn').disabled = true;
   }
   if (isAdmin){
     route();
