@@ -33,6 +33,15 @@ head = ('<meta charset="utf-8">\n<meta name="viewport" content="width=device-wid
 js = (S / 'firebase.js').read_text().replace('__FIREBASE_CONFIG__', fb_cfg) + (S / 'app.js').read_text() + (S / 'questions_upload.js').read_text() + (S / 'admins.js').read_text().replace('__MAIN_EMAILS__', json.dumps(emails))
 out = (head + '<style>\n' + tokens + (S / 'style.css').read_text() + '</style>\n'
        + (S / 'body.html').read_text().replace('__LOGO__', logo) + '<script>\n' + js + '</script>\n')
-(pathlib.Path(__file__).parent / 'dist').mkdir(exist_ok=True)
-(pathlib.Path(__file__).parent / 'dist/index.html').write_text(out)
-print('dist/index.html', len(out), 'bytes')
+# Test-only: EMU_HOST=<ip> python3 build.py writes dist-lan/index.html, forced onto the Firebase emulator at that
+# address (for phones on the same Wi-Fi). It never writes dist/, so it can't be deployed by accident.
+emu_host = os.environ.get('EMU_HOST', '').strip()
+if emu_host:
+    if not re.fullmatch(r'[0-9.]+|localhost', emu_host): sys.exit('EMU_HOST must be an IP address')
+    out = out.replace('<script src="https://www.gstatic.com', '<script>window.__EMU_HOST=' + json.dumps(emu_host) + ';</script>\n<script src="https://www.gstatic.com', 1)
+    out_dir, name = 'dist-lan', 'dist-lan/index.html'
+else:
+    out_dir, name = 'dist', 'dist/index.html'
+(pathlib.Path(__file__).parent / out_dir).mkdir(exist_ok=True)
+(pathlib.Path(__file__).parent / name).write_text(out)
+print(name, len(out), 'bytes' + (' (TEST BUILD: emulator at ' + emu_host + ')' if emu_host else ''))

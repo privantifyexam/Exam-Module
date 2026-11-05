@@ -105,6 +105,14 @@ await check('invigilator lists the waiting list', true, list('admin', 'waiting')
 await check('non-invigilator password account reads the code', false, get('outsider', 'key/code'));
 await check('exam goes live WITHOUT its frozen copy', false, set('admin', 'exam/state', {status: 'live', startedAt: 1000, liveAt: 2000, endsAt: Date.now() + 3600e3}));
 await check('exam goes live together with its frozen copy (one batch)', true, commit('admin', [['exams/pharmacist_1000', {track: 'pharmacist', examId: '1000', qs, answers: [1], endsAt: Date.now() + 3600e3}], ['exam/state', {status: 'live', startedAt: 1000, liveAt: 2000, endsAt: Date.now() + 3600e3, codeAt: 500}]]));
+console.log('--- 10-second start: nothing opens before startsAt; only an invigilator writes startsAt');
+const LIVE = (o = {}) => Object.assign({status: 'live', startedAt: 1000, liveAt: 2000, endsAt: Date.now() + 3600e3, codeAt: 500}, o);
+await check('staff writes startsAt into the exam state', false, set('staffA', 'exam/state', LIVE({startsAt: Date.now()})));
+await check('invigilator starts with startsAt = now + 10 s (with the frozen copy)', true, commit('admin', [['exams/pharmacist_1000', {track: 'pharmacist', examId: '1000', qs, answers: [1], endsAt: Date.now() + 3600e3}], ['exam/state', LIVE({startsAt: Date.now() + 10000})]]));
+await check('staff WITH a waiting record reads questions BEFORE startsAt (countdown)', false, get('staffA', 'questions/pharmacist'));
+await check('staff creates an attempt BEFORE startsAt (countdown)', false, put('staffA', 'results/staffA_pharmacist_1000', {track: 'pharmacist', examId: '1000', uid: 'staffA', name: 'Anitha M', clinic: 'Edappal', phone: '9847011001', position: 'Pharmacist', consentVer: 'privacy-2026-11-05', consentAt: await consentAtOf('staffA_pharmacist'), answers: [-1], i: 0, away: 0, status: 'in_progress'}, {ts: ['startedAt', 'updatedAt']}));
+await check('invigilator reads questions during the countdown', true, get('admin', 'questions/pharmacist'));
+await set('owner', 'exam/state', LIVE({startsAt: Date.now() - 1000}));   // countdown over
 await check('staff WITH a waiting record reads questions while the exam is live', true, get('staffA', 'questions/pharmacist'));
 await check('staff with NO waiting record reads questions while live (never entered the code)', false, get('staffL', 'questions/pharmacist'));
 await set('owner', 'waiting/staffX_pharmacist', {track: 'pharmacist', examId: '999', name: 'X', clinic: 'C', phone: '9000000009', position: 'P'});

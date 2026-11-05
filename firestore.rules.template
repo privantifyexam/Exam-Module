@@ -20,7 +20,7 @@ service cloud.firestore {
     function trackOfState(d) { return d == 'state' ? 'pharmacist' : d; }
     function examLive(track) {
       let e = get(/databases/$(database)/documents/exam/$(stateOf(track))).data;
-      return e.status == 'live' && request.time.toMillis() < e.endsAt;
+      return e.status == 'live' && request.time.toMillis() < e.endsAt && (!('startsAt' in e) || request.time.toMillis() >= e.startsAt);
     }
     function shortText(v, n) { return v is string && v.size() > 0 && v.size() <= n; }
     // strict id shapes, so nothing a staff member writes can carry markup into an id
@@ -43,7 +43,8 @@ service cloud.firestore {
       allow delete: if isAdmin() && email != myEmail();
       allow update: if false;
     }
-    // exam state (status, times; no code): staff read, invigilator writes.
+    // exam state (status, times incl. startsAt = when the 10-second countdown ends; no code): staff read,
+    // only an invigilator writes. Questions and attempts open only from startsAt (examLive, attemptCreate).
     // An exam can only go live together with its frozen copy of questions and answers (exams/<track>_<id>).
     match /exam/{d} {
       allow read: if signedIn();
@@ -142,6 +143,7 @@ service cloud.firestore {
         && id == request.auth.uid + '_' + d.track + '_' + d.examId
         && d.keys().hasOnly(attemptFields()) && d.uid == request.auth.uid
         && e.status == 'live' && string(e.startedAt) == d.examId && request.time.toMillis() < e.endsAt
+        && (!('startsAt' in e) || request.time.toMillis() >= e.startsAt)
         && w.examId == d.examId && d.name == w.name && d.clinic == w.clinic && d.phone == w.phone && d.position == w.position
         && d.consentVer == w.consentVer && d.consentAt == w.consentAt
         && d.status == 'in_progress' && d.startedAt == request.time

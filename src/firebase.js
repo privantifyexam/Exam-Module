@@ -77,8 +77,11 @@
       const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
       const auth = app.auth(), fs = app.firestore();
       // local testing only: ?emu on localhost talks to the Firebase emulators instead of the real project
-      if (/^(localhost|127\.0\.0\.\d+)$/.test(location.hostname) && new URLSearchParams(location.search).has('emu') && !start.emu){
-        start.emu = true; auth.useEmulator('http://127.0.0.1:9099'); fs.useEmulator('127.0.0.1', 8080);
+      // a test build made with EMU_HOST (build.py) is ALWAYS on the emulator at that address, so it can never reach the
+      // live project, even when opened from another device without ?emu
+      const emuHost = window.__EMU_HOST || (/^(localhost|127\.0\.0\.\d+)$/.test(location.hostname) && new URLSearchParams(location.search).has('emu') ? '127.0.0.1' : '');
+      if (emuHost && !start.emu){
+        start.emu = true; window.__emuOn = emuHost; auth.useEmulator('http://' + emuHost + ':9099'); fs.useEmulator(emuHost, 8080);
       }
       await new Promise(r => { const off = auth.onAuthStateChanged(() => { off(); r(); }); });
       let u = auth.currentUser, admin = false;
