@@ -74,8 +74,9 @@
         <input class="input" id="fName" type="text" maxlength="60" autocomplete="off" aria-describedby="fNameErr" placeholder="e.g. Anitha Menon">
         <p class="ferr" id="fNameErr" hidden></p></div>
       <div class="field"><label for="fPhone">Mobile number</label>
-        <input class="input" id="fPhone" type="tel" inputmode="tel" maxlength="15" autocomplete="off" aria-describedby="fPhoneHelp fPhoneErr" placeholder="10-digit number">
+        <input class="input" id="fPhone" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="10" autocomplete="off" aria-describedby="fPhoneHelp fPhoneErr" placeholder="10-digit number">
         <p class="help" id="fPhoneHelp">The invigilator uses this to match your marks.</p>
+        <p class="fwarn" id="fPhoneWarn" role="status" hidden><span>Only numbers (0–9) can be typed here. Letters and symbols are left out.</span><button class="fwarn-x" id="fPhoneWarnX" type="button" aria-label="Close this message">×</button></p>
         <p class="ferr" id="fPhoneErr" hidden></p></div>
       <div class="field"><label for="fPos">Position</label>
         <select class="input" id="fPos" aria-describedby="fPosErr"></select>

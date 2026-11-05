@@ -90,12 +90,27 @@ function fieldErr(id, msg){
   f.closest('.field').classList.toggle('bad', !!msg);
 }
 ['fName','fPhone','fPos'].forEach(id => $(id).addEventListener(id === 'fPos' ? 'change' : 'input', () => fieldErr(id, '')));
+// mobile number: digits only, 10 at most. A pasted +91 / 0 prefix is dropped so the 10-digit number remains.
+// after 3 tries at typing letters or symbols, a warning explains that only numbers go here
+// it closes by itself after 6 seconds or with ×; three more tries bring it back
+let phoneBadTries = 0, phoneWarnTimer = null;
+const phoneWarnReset = () => { phoneBadTries = 0; clearTimeout(phoneWarnTimer); $('fPhoneWarn').hidden = true; };
+const phoneWarnShow = () => { $('fPhoneWarn').hidden = false; clearTimeout(phoneWarnTimer); phoneWarnTimer = setTimeout(phoneWarnReset, 6000); };
+$('fPhoneWarnX').onclick = () => { phoneWarnReset(); $('fPhone').focus(); };
+$('fPhone').addEventListener('input', () => {
+  const el = $('fPhone'); let d = el.value.replace(/\D/g, '');
+  if (/[^\d\s+\-]/.test(el.value) && ++phoneBadTries >= 3) phoneWarnShow();   // spaces, + and - from a pasted number don't count
+  if (!el.value) phoneWarnReset();
+  if (d.length > 10 && /^(91|0)/.test(d) && /[+\s-]/.test(el.value)) d = d.replace(/^(91|0)/, '');
+  d = d.slice(0, 10);
+  if (el.value !== d) el.value = d;
+});
 $('loginForm').addEventListener('submit', ev => {
   ev.preventDefault();
   const name = $('fName').value.trim().replace(/\s+/g,' '), phone = $('fPhone').value.replace(/[^\d]/g,''), pos = $('fPos').value;
   const errs = {};
   if (name.length < 3) errs.fName = name ? 'Enter your full name, at least 3 letters.' : 'Enter your full name.';
-  if (phone.length < 10 || phone.length > 13) errs.fPhone = phone ? 'That number has ' + phone.length + ' digits. Enter your 10-digit mobile number.' : 'Enter your 10-digit mobile number.';
+  if (phone.length !== 10) errs.fPhone = !phone ? 'Enter your mobile number.' : 'Enter all 10 digits of your mobile number.';
   if (!pos) errs.fPos = 'Select your position.';
   let first = null;
   ['fName','fPhone','fPos'].forEach(id => { fieldErr(id, errs[id]); if (errs[id] && !first) first = id; });
@@ -298,7 +313,7 @@ function finish(closed){
 }
 $('doneBtn').onclick = () => {
   if (preview) return exitPreview();
-  sess = null; lsSet(null); ['fName','fPhone','fPos'].forEach(id => { $(id).value = ''; fieldErr(id, ''); });
+  sess = null; lsSet(null); ['fName','fPhone','fPos'].forEach(id => { $(id).value = ''; fieldErr(id, ''); }); phoneWarnReset();
   whoLine(); show('sLogin');
 };
 
@@ -636,7 +651,7 @@ async function startPreview(){
 function exitPreview(){
   preview = false; lsSet(null); LS = T.ls; letSleep(); sess = null;
   exam = states[TR] || {status:'idle'}; $('pvBar').hidden = true;
-  ['fName','fPhone','fPos','fCode'].forEach(id => { $(id).value = ''; fieldErr(id, ''); });
+  ['fName','fPhone','fPos','fCode'].forEach(id => { $(id).value = ''; fieldErr(id, ''); }); phoneWarnReset();
   route();
 }
 $('aTry').onclick = () => startPreview();

@@ -308,3 +308,9 @@ body.dlg-open{overflow:hidden}
 .toast.show{opacity:1;transform:none}
 .toast #aMsgT{flex:1;line-height:1.45}
 @media (max-width:560px){.toast{left:12px;right:12px;bottom:calc(12px + env(safe-area-inset-bottom,0px));max-width:none}}
+.fwarn{display:flex;gap:6px;align-items:center;font-size:14px;font-weight:600;color:var(--st-pending-fg)}
+.fwarn::before{content:"!";flex:none;width:18px;height:18px;border-radius:50%;background:var(--st-pending-dot);color:#FFFFFF;display:grid;place-items:center;font-size:12px;font-weight:800}
+.fwarn span{flex:1}
+.fwarn-x{flex:none;width:28px;height:28px;border:0;border-radius:50%;background:none;color:inherit;font-size:20px;line-height:1;cursor:pointer}
+.fwarn-x:hover{background:var(--st-pending-bg)}
+.fwarn-x:focus-visible{outline:2px solid var(--brand-fg)}
