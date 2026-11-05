@@ -76,6 +76,10 @@
       if (!window.firebase) throw new Error('Firebase did not load');
       const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
       const auth = app.auth(), fs = app.firestore();
+      // local testing only: ?emu on localhost talks to the Firebase emulators instead of the real project
+      if (/^(localhost|127\.0\.0\.\d+)$/.test(location.hostname) && new URLSearchParams(location.search).has('emu') && !start.emu){
+        start.emu = true; auth.useEmulator('http://127.0.0.1:9099'); fs.useEmulator('127.0.0.1', 8080);
+      }
       await new Promise(r => { const off = auth.onAuthStateChanged(() => { off(); r(); }); });
       let u = auth.currentUser, admin = false;
       if (u && !u.isAnonymous) admin = await isInvigilator(fs);

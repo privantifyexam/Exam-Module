@@ -13,7 +13,7 @@ const lvCount = () => ({e: QS.filter(q => q.l === 'Easy').length, m: QS.filter(q
 const needMin = () => Math.ceil(N * SEC / 60);
 // questions saved from the dashboard (questions/<track>) replace the ones built into the page
 function setQs(tr, qs){ TRACKS[tr].qs = qs; TRACKS[tr].uploaded = true; if (tr === TR){ QS = qs; N = qs.length; applyTrackText(); } }
-async function loadQs(){ await Promise.all(Object.keys(TRACKS).map(tr => db.doc('questions/' + tr).get().then(s => { if (s.exists && Array.isArray(s.data().qs)) setQs(tr, s.data().qs); }).catch(() => {}))); }
+async function loadQs(){ await Promise.all(Object.keys(TRACKS).map(tr => db.doc('questions/' + tr).get().then(s => { if (s.exists && Array.isArray(s.data().qs)){ setQs(tr, s.data().qs); TRACKS[tr].qMeta = {at: s.data().updatedAt, by: s.data().updatedBy}; } }).catch(() => {}))); }
 function useTrack(tr){ TR = tr; T = TRACKS[tr]; QS = T.qs; N = QS.length; LS = T.ls; exam = states[tr] || {status:'idle'}; key = keys[tr] || null; secCode = codes[tr] || null; }
 const $ = id => document.getElementById(id);
 let db = null, user = null, isAdmin = false;
@@ -49,8 +49,13 @@ window.addEventListener('beforeunload', ev => { if (!preview && sess && sess.sta
 const CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no 0/O or 1/I, so the code is easy to read out
 function newCode(){ const r = new Uint32Array(6); crypto.getRandomValues(r); return Array.from(r, x => CODE_ABC.charAt(x % CODE_ABC.length)).join(''); }
 async function hashCode(code, salt){ const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + ':' + String(code).toUpperCase())); return Array.from(new Uint8Array(buf), x => x.toString(16).padStart(2,'0')).join(''); }
-const codeOk = () => !exam.codeHash || !!(sess && sess.codeOk === String(exam.startedAt));
-let codeTries = 0, codeLockUntil = 0, secCode = null;
+// the code is checked on the server (firestore.rules) when the waiting record is written. A person's code is
+// good for this exam and this code: making a new code sends anyone still waiting back to the code box.
+const codeTag = () => String(exam.startedAt) + ':' + (exam.codeAt || 0);
+const codeOk = () => preview ? (!exam.codeHash || !!(sess && sess.codeOk === String(exam.startedAt))) : !!(sess && sess.codeOk === codeTag());
+const denied = e => !!e && (e.code === 'permission-denied' || /insufficient permissions/i.test(e.message || ''));
+const MAX_TRIES = 5;
+let secCode = null, lockedOut = false, lockUnsub = null;
 const TICK = '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>';
 
 const show = id => { ['sLogin','sCode','sReady','sQuiz','sDone','sHome','sAdmin'].forEach(s => $(s).hidden = s !== id); try { window.scrollTo(0, 0); } catch(e){} };
@@ -89,7 +94,7 @@ function fieldErr(id, msg){
   f.setAttribute('aria-invalid', msg ? 'true' : 'false');
   f.closest('.field').classList.toggle('bad', !!msg);
 }
-['fName','fPhone','fPos'].forEach(id => $(id).addEventListener(id === 'fPos' ? 'change' : 'input', () => fieldErr(id, '')));
+['fName','fPhone','fClinic','fPos'].forEach(id => $(id).addEventListener(id === 'fPos' ? 'change' : 'input', () => fieldErr(id, '')));
 // mobile number: digits only, 10 at most. A pasted +91 / 0 prefix is dropped so the 10-digit number remains.
 // after 3 tries at typing letters or symbols, a warning explains that only numbers go here
 // it closes by itself after 6 seconds or with ×; three more tries bring it back
@@ -107,15 +112,16 @@ $('fPhone').addEventListener('input', () => {
 });
 $('loginForm').addEventListener('submit', ev => {
   ev.preventDefault();
-  const name = $('fName').value.trim().replace(/\s+/g,' '), phone = $('fPhone').value.replace(/[^\d]/g,''), pos = $('fPos').value;
+  const name = $('fName').value.trim().replace(/\s+/g,' '), clinic = $('fClinic').value.trim().replace(/\s+/g,' '), phone = $('fPhone').value.replace(/[^\d]/g,''), pos = $('fPos').value;
   const errs = {};
   if (name.length < 3) errs.fName = name ? 'Enter your full name, at least 3 letters.' : 'Enter your full name.';
   if (phone.length !== 10) errs.fPhone = !phone ? 'Enter your mobile number.' : 'Enter all 10 digits of your mobile number.';
+  if (clinic.length < 2) errs.fClinic = 'Enter the clinic you work at.';
   if (!pos) errs.fPos = 'Select your position.';
   let first = null;
-  ['fName','fPhone','fPos'].forEach(id => { fieldErr(id, errs[id]); if (errs[id] && !first) first = id; });
+  ['fName','fPhone','fClinic','fPos'].forEach(id => { fieldErr(id, errs[id]); if (errs[id] && !first) first = id; });
   if (first){ $(first).focus(); $(first).scrollIntoView({block:'center'}); return; }
-  sess = {name, phone: phone.slice(-10), pos, started:false};
+  sess = {name, phone: phone.slice(-10), clinic, pos, started:false};
   lsSet(sess); goNext();
 });
 
@@ -131,9 +137,14 @@ function refreshCode(){
   if (live && codeOk()) return goReady();
   statusChip($('cChip'));
   const wasOff = $('fCode').disabled;
-  $('fCode').disabled = !live; $('codeBtn').disabled = !live;
+  const locked = lockedOut && !preview;
+  $('fCode').disabled = !live || locked; $('codeBtn').disabled = !live || locked;
+  if (locked) fieldErr('fCode', 'You have tried ' + MAX_TRIES + ' times. Ask the invigilator to let you try again. This box unlocks by itself when they do.');
+  const hadCode = sess && sess.codeOk && String(sess.codeOk).split(':')[0] === String(exam.startedAt);
   $('fCodeHelp').textContent = !db ? 'Can\'t connect right now. Check your internet.'
     : preview ? 'Preview: type the practice code ' + $('pvCode').textContent + ' (shown in the purple bar at the top).'
+    : locked ? ''
+    : live && hadCode ? 'The invigilator made a new code. Ask for it and type it here.'
     : live ? 'Letters and numbers. Capitals or small letters both work.'
     : s === 'ended' ? 'This exam has ended. Ask the invigilator what to do next.'
     : 'Keep this page open. The code box unlocks when the invigilator sets up the exam.';
@@ -147,30 +158,40 @@ $('fCode').addEventListener('input', () => {
 $('codeForm').addEventListener('submit', async ev => {
   ev.preventDefault();
   if (!canJoin(eff()) || !sess) return;
-  const wait = Math.ceil((codeLockUntil - Date.now()) / 1000);
-  if (wait > 0) { fieldErr('fCode', 'Too many wrong tries. Wait ' + wait + ' seconds, then check the code with the invigilator.'); return; }
+  if (lockedOut && !preview){ refreshCode(); return; }
   const v = $('fCode').value.toUpperCase().replace(/[^A-Z0-9]/g, '');
   if (v.length !== 6) { fieldErr('fCode', v ? 'The code has 6 characters. You typed ' + v.length + '.' : 'Enter the 6-character code from the invigilator.'); $('fCode').focus(); return; }
-  $('codeBtn').disabled = true;
-  let h = '';
-  try { h = await hashCode(v, String(exam.startedAt)); } catch(e){}
-  $('codeBtn').disabled = false;
-  let ok = h === exam.codeHash;
-  if (!ok && preview){   // test mode also accepts the real exam's current code
-    const real = states[TR];
-    if (real && real.codeHash && real.startedAt){ try { ok = (await hashCode(v, String(real.startedAt))) === real.codeHash; } catch(e){} }
+  $('codeBtn').disabled = true; $('codeBtn').textContent = 'Checking…';
+  let ok = false, offline = false;
+  if (preview){ try { ok = (await hashCode(v, String(exam.startedAt))) === exam.codeHash; } catch(e){} }
+  else {
+    // joining the waiting list is the check: the server accepts the record only with the right code
+    const w = {track:TR, examId:String(exam.startedAt), code:v, codeAt:exam.codeAt || 0, name:sess.name, clinic:sess.clinic || '', phone:sess.phone, position:sess.pos, joinedAt:Date.now()};
+    try { await Promise.race([db.doc('waiting/' + uid + '_' + TR).set(w), new Promise((_, no) => setTimeout(() => no({code:'timeout'}), 12000))]); ok = true; }
+    catch(e){ offline = !denied(e); }
   }
+  $('codeBtn').disabled = false; $('codeBtn').textContent = 'Continue';
+  if (offline){ fieldErr('fCode', 'Could not check the code: the internet connection dropped. Check it and press Continue again.'); return; }
   if (!ok) {
-    codeTries++;
-    if (codeTries >= 5) { codeTries = 0; codeLockUntil = Date.now() + 60000; fieldErr('fCode', 'That code is not right. Too many tries: wait 1 minute, then check the code with the invigilator.'); }
-    else fieldErr('fCode', 'That code is not right. Check it with the invigilator. ' + (5 - codeTries) + ' tr' + (5 - codeTries === 1 ? 'y' : 'ies') + ' left.');
+    sess.tries = (sess.tries || 0) + 1; lsSet(sess);
+    const left = MAX_TRIES - sess.tries;
+    if (left <= 0){
+      sess.tries = 0; lsSet(sess);
+      if (preview) fieldErr('fCode', 'That code is not right. In a real exam you would now be locked out until the invigilator lets you try again.');
+      else {
+        lockedOut = true;
+        db.doc('lockouts/' + uid + '_' + TR).set({track:TR, examId:String(exam.startedAt), name:sess.name, clinic:sess.clinic || '', phone:sess.phone, at:Date.now()}).catch(() => {});
+        refreshCode(); return;
+      }
+    }
+    else fieldErr('fCode', 'That code is not right. Check it with the invigilator. ' + left + ' tr' + (left === 1 ? 'y' : 'ies') + ' left.');
     $('fCode').focus(); $('fCode').select(); return;
   }
-  codeTries = 0; sess.codeOk = String(exam.startedAt); lsSet(sess);
+  sess.tries = 0; sess.codeOk = preview ? String(exam.startedAt) : codeTag(); lsSet(sess);
   $('fCode').value = ''; fieldErr('fCode', ''); say('Code accepted'); goReady();
 });
 $('codeBack').onclick = () => {
-  if (sess){ $('fName').value = sess.name; $('fPhone').value = sess.phone; $('fPos').value = sess.pos; }
+  if (sess){ $('fName').value = sess.name; $('fPhone').value = sess.phone; $('fClinic').value = sess.clinic || ''; $('fPos').value = sess.pos; }
   sess = null; lsSet(null); whoLine(); show('sLogin'); $('fName').focus();
 };
 
@@ -195,7 +216,7 @@ function refreshReady(){
     : 'Keep this page open. Your test starts by itself when the invigilator starts the exam.';
 }
 $('backBtn').onclick = () => {
-  if (sess){ $('fName').value = sess.name; $('fPhone').value = sess.phone; $('fPos').value = sess.pos; }
+  if (sess){ $('fName').value = sess.name; $('fPhone').value = sess.phone; $('fClinic').value = sess.clinic || ''; $('fPos').value = sess.pos; }
   sess = null; lsSet(null); whoLine(); show('sLogin'); $('fName').focus();
 };
 // the test starts by itself for everyone waiting as soon as the invigilator starts the exam
@@ -212,7 +233,7 @@ function beginTest(){
 function write(status){
   if (preview){ saveFailed = false; lastSaved = Date.now(); if (status === 'submitted') finalSaved = true; paintSave(); return; }
   if (!db || !uid || !sess || !sess.pid) { if (db && !uid) { saveFailed = true; if (status === 'submitted') finalSaved = false; paintSave(); } return; }
-  const d = {track:TR, examId:sess.examId, name:sess.name, phone:sess.phone, position:sess.pos, answers:sess.answers.slice(), i:sess.i, away:sess.away || 0, status, startedAt:sess.t0, updatedAt:Date.now()};
+  const d = {track:TR, examId:sess.examId, name:sess.name, clinic:sess.clinic || '', phone:sess.phone, position:sess.pos, answers:sess.answers.slice(), i:sess.i, away:sess.away || 0, status, startedAt:sess.t0, updatedAt:Date.now()};
   if (status === 'submitted') d.finishedAt = Date.now();
   const attempt = async n => {
     try {
@@ -306,14 +327,14 @@ function finish(closed){
   $('dMsg').textContent = (closed ? 'Time is up, so the answers you gave have been saved. ' : 'Thank you. ')
     + 'You answered ' + answered + ' of ' + N + ' questions. The invigilator will share the results.';
   const pv = $('dScore'); pv.hidden = !preview;
-  if (preview){ const sc = scoreOf({answers: sess.answers}), lc = lvCount();
+  if (preview){ const sc = previewScore(sess.answers), lc = lvCount();
     pv.textContent = sc ? 'Your score in this preview: ' + sc.t + ' / ' + N + ' (' + Math.round(sc.t / N * 100) + '%) · Easy ' + sc.e + '/' + lc.e + ' · Medium ' + sc.m + '/' + lc.m + ' · Hard ' + sc.h + '/' + lc.h + '. Staff never see their score; it only shows here in the preview.' : 'The correct answers are not saved yet, so no score can be shown.'; }
   paintSave();
   say($('dTitle').textContent);
 }
 $('doneBtn').onclick = () => {
   if (preview) return exitPreview();
-  sess = null; lsSet(null); ['fName','fPhone','fPos'].forEach(id => { $(id).value = ''; fieldErr(id, ''); }); phoneWarnReset();
+  sess = null; lsSet(null); ['fName','fPhone','fClinic','fPos'].forEach(id => { $(id).value = ''; fieldErr(id, ''); }); phoneWarnReset();
   whoLine(); show('sLogin');
 };
 
@@ -337,98 +358,244 @@ function tick(){
 }
 
 /* ---------- invigilator ---------- */
-const scoreOf = r => {
-  const a = r.answers || [], k = key ? key.answers : null, o = {t:0,e:0,m:0,h:0,n:0};
-  if (!k) return null;
-  for (let i=0;i<N;i++){ if (a[i] >= 0) o.n++; if (a[i] === k[i]){ o.t++; const l = QS[i].l; if (l === 'Easy') o.e++; else if (l === 'Medium') o.m++; else o.h++; } }
-  return o;
-};
-let selExam = '';
-const shownId = () => selExam || marksId(exam);
-// every exam that has saved results for this assessment, newest first
-function examIds(){
-  const ids = new Set(results.filter(r => (r.track || 'pharmacist') === TR && r.examId).map(r => String(r.examId)));
-  const now = marksId(exam); if (now) ids.add(now);
-  return [...ids].sort((a, b) => +b - +a);
+// Each exam keeps its own frozen copy of the questions and answer key (exams/<track>_<examId>, written in the
+// same step that starts it) and its saved scores (marks/<track>_<examId>). Marks and downloads read only
+// these, never the current question bank, so uploading new questions can't change past marks.
+const exams = {}, marks = {};
+let waits = [], locks = [], examsReady = false, marksReady = false, lastUpd = 0;
+const fzId = (tr, id) => tr + '_' + id;
+const frozen = (id, tr = TR) => exams[fzId(tr, id)] || null;
+const lvOf = qs => ({e: qs.filter(q => q.l === 'Easy').length, m: qs.filter(q => q.l === 'Medium').length, h: qs.filter(q => q.l === 'Hard').length});
+function calcScore(answers, fz){
+  const k = fz.answers || [], o = {t:0, e:0, m:0, h:0, n:0, of: fz.qs.length};
+  for (let i = 0; i < fz.qs.length; i++){ const a = answers[i]; if (a >= 0) o.n++; if (a === k[i]){ o.t++; const l = fz.qs[i].l; if (l === 'Easy') o.e++; else if (l === 'Medium') o.m++; else o.h++; } }
+  o.pct = o.of ? Math.round(o.t / o.of * 100) : 0; return o;
 }
+// saved score on submit; while someone is still answering, worked out live from the exam's own copy
+const scoreOf = r => {
+  const tr = r.track || 'pharmacist', id = String(r.examId), saved = marks[fzId(tr, id)];
+  if (r.status === 'submitted' && saved && saved[r._id]) return saved[r._id];
+  const fz = frozen(id, tr); return fz ? calcScore(r.answers || [], fz) : null;
+};
+// preview runs use the current questions (nothing is saved)
+const previewScore = a => key && Array.isArray(key.answers) ? calcScore(a, {qs: QS, answers: key.answers}) : null;
+// save the score of every submitted attempt that doesn't have one yet (staff can't read the answer key)
+let markBusy = false;
+function saveMarks(){
+  if (!isAdmin || !examsReady || !marksReady || markBusy) return;
+  const todo = {};
+  results.forEach(r => {
+    if (r.status !== 'submitted') return;
+    const id = fzId(r.track || 'pharmacist', String(r.examId)), fz = exams[id];
+    if (!fz || (marks[id] && marks[id][r._id])) return;
+    (todo[id] = todo[id] || {})[r._id] = calcScore(r.answers || [], fz);
+  });
+  const ids = Object.keys(todo); if (!ids.length) return;
+  markBusy = true;
+  Promise.all(ids.map(id => db.doc('marks/' + id).set(todo[id], {merge: true}))).catch(() => {}).finally(() => { markBusy = false; });
+}
+// exams that ran before frozen copies existed: freeze them once with the questions in use at the time of this update
+const freezing = new Set();
+function freezeOld(){
+  if (!isAdmin || !examsReady) return;
+  results.forEach(r => {
+    const tr = r.track || 'pharmacist', id = String(r.examId || ''), k = fzId(tr, id), t = TRACKS[tr];
+    if (!id || exams[k] || freezing.has(k)) return;
+    const ans = keys[tr] && keys[tr].answers;
+    if (!t || !t.uploaded || !Array.isArray(ans) || ans.length !== t.qs.length) return;
+    freezing.add(k);
+    db.doc('exams/' + k).get().then(s => s.exists ? null : db.doc('exams/' + k).set({track: tr, examId: id, qs: t.qs, answers: ans, legacy: true, frozenAt: Date.now()}))
+      .catch(() => freezing.delete(k));
+  });
+}
+
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const fmtDay = t => { const d = new Date(+t); return d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear(); };
+const fmtD = t => t ? fmtDay(t) + ', ' + fmtT(t) : '–';
+const curId = () => exam.startedAt ? String(exam.startedAt) : '';
+const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+// staff who entered the current code for the current exam and haven't started yet
+function people(){
+  const id = curId();
+  const all = id && canJoin(exam.status) ? waits.filter(w => w.track === TR && w.examId === id) : [];
+  const st = new Set(results.filter(r => (r.track || 'pharmacist') === TR && String(r.examId) === id).map(r => r.phone));
+  return {all, waiting: all.filter(w => !st.has(w.phone) && w.codeAt === (exam.codeAt || 0)).sort((a, b) => a.joinedAt - b.joinedAt)};
+}
+const myLocks = () => locks.filter(l => l.track === TR);
+
+/* mark list: which exams exist, newest first */
+let selExam = '';
+function examState(id){ if (id === curId()){ if (exam.status === 'open') return 'notstarted'; if (eff() === 'live') return 'live'; } return 'finished'; }
+function examList(){
+  const ids = new Set();
+  results.forEach(r => { if ((r.track || 'pharmacist') === TR && r.examId) ids.add(String(r.examId)); });
+  Object.values(exams).forEach(e => { if (e.track === TR && e.examId) ids.add(String(e.examId)); });
+  if (curId() && exam.status !== 'idle') ids.add(curId());
+  return [...ids].sort((a, b) => +b - +a).map(id => ({id, st: examState(id)}));
+}
+// the picker opens on the live exam if one is running, otherwise on the last finished one
+const lastFinished = l => { const f = l.find(x => x.st === 'finished'); return f ? f.id : ''; };
+function shownId(){
+  const l = examList();
+  if (selExam && l.some(x => x.id === selExam)) return selExam;
+  const lv = l.find(x => x.st === 'live'); return lv ? lv.id : lastFinished(l) || (l[0] ? l[0].id : '');
+}
+const examTime = id => { const fz = frozen(id); return (fz && fz.liveAt) || +id; };
+const examName = id => fmtD(examTime(id)) + ' exam';
 function rowsForExam(id = shownId()){
-  const cur = results.filter(r => id && (r.track || 'pharmacist') === TR && r.examId === id);
+  const cur = results.filter(r => id && (r.track || 'pharmacist') === TR && String(r.examId) === id);
   const byPhone = {};
   cur.sort((a,b) => (a.startedAt||0) - (b.startedAt||0)).forEach(r => { (byPhone[r.phone] = byPhone[r.phone] || []).push(r); });
   return Object.values(byPhone).map(list => Object.assign({extra:list.length-1, sc:scoreOf(list[0])}, list[0]));
 }
 function rank(rows){ return rows.slice().sort((a,b) => ((b.sc?b.sc.t:-1)-(a.sc?a.sc.t:-1)) || ((a.finishedAt||9e15)-(b.finishedAt||9e15))); }
-// popup message: problems ("Could not…", "End it…") stay until OK; other messages close after a few seconds
+// questions and level counts of an exam: its frozen copy, or the current set for an exam not started yet
+function examQs(id){ const fz = frozen(id); return fz ? fz.qs : QS; }
+
+// popup message: problems stay until OK; other messages close after a few seconds
 let msgTimer = null;
-function msg(t){
+function msg(t, sticky){
   const el = $('aMsg'); clearTimeout(msgTimer);
   if (!t){ el.classList.remove('show'); msgTimer = setTimeout(() => { el.hidden = true; }, 200); return; }
-  const bad = /^(could not|this exam is running|end the exam|there are no|choose the excel)/i.test(t);
+  const bad = /^(could not|this exam is running|end the exam|there are no|choose the excel|nothing to download)/i.test(t);
   $('aMsgT').textContent = t; el.classList.toggle('bad', bad); el.classList.toggle('info', !bad); el.setAttribute('role', bad ? 'alert' : 'status');
   el.hidden = false; requestAnimationFrame(() => el.classList.add('show'));
-  if (!bad) msgTimer = setTimeout(() => msg(''), Math.min(12000, 4000 + t.length * 40));   // longer messages stay longer
+  if (!bad && !sticky) msgTimer = setTimeout(() => msg(''), Math.min(12000, 4000 + t.length * 40));
 }
 $('aMsgX').onclick = () => msg('');
-$('aMsg').addEventListener('mouseenter', () => clearTimeout(msgTimer));   // hovering keeps it open to read
+$('aMsg').addEventListener('mouseenter', () => clearTimeout(msgTimer));
 $('aMsg').addEventListener('mouseleave', () => { if (!$('aMsg').classList.contains('bad') && !$('aMsg').hidden) msgTimer = setTimeout(() => msg(''), 3000); });
+
+let startBusy = false, codeArmed = false, oldCodeFixed = '';
+function minsErr(){
+  const raw = $('aMins').value.trim(), v = Number(raw);
+  if (!raw) return 'Enter how many minutes the exam stays open.';
+  if (!Number.isInteger(v) || v < 5 || v > 180) return 'Choose a whole number of minutes from 5 to 180.';
+  return '';
+}
+function paintStart(){
+  const m = minsErr(), v = +$('aMins').value, n = people().waiting.length;
+  $('aMinsErr').textContent = m; $('aMinsErr').hidden = !m;
+  $('aMins').closest('.field').classList.toggle('bad', !!m); $('aMins').setAttribute('aria-invalid', String(!!m));
+  $('aMinsWarn').hidden = !!m || !(v < needMin());
+  $('aStart').disabled = !!m || startBusy || !!startBlock() || exam.status !== 'open';
+  $('aStart').textContent = startBusy ? 'Starting…' : n ? 'Start exam for ' + n + ' waiting' : 'Start exam';
+}
+$('aMins').addEventListener('input', paintStart);
 
 function paintAdmin(){
   if (!isAdmin || $('sAdmin').hidden) return;
-  const s = eff(), live = s === 'live', all = rank(rowsForExam()), now = selExam ? rank(rowsForExam(marksId(exam))) : all;
-  statusChip($('aChip'));
-  $('aIdle').hidden = live; $('aLiveRow').hidden = !canJoin(s); $('aEndWrap').hidden = !live;
+  const s = eff(), live = s === 'live', open = exam.status === 'open', cid = curId();
   if (!preview && (exam.status === 'idle' || exam.status === 'ended')) prepareExam();
+  // codes made before code times were saved get replaced once, so the server can check them
+  if (!preview && open && secCode && secCode.examId === cid && !secCode.madeAt && oldCodeFixed !== cid){ oldCodeFixed = cid; makeCode().catch(() => {}); }
+  const p = people();
+
+  // stat tiles: the current exam
+  const cur = rowsForExam(cid), sub = cur.filter(r => r.status === 'submitted'), sc = sub.map(r => r.sc).filter(Boolean);
+  $('sWait').textContent = p.waiting.length;
+  $('sStart').textContent = cur.length; $('sStartU').textContent = 'of ' + Math.max(p.all.length, cur.length) + ' waiting';
+  $('sProg').textContent = cur.length - sub.length; $('sSub').textContent = sub.length;
+  $('sAvg').textContent = sc.length ? (sc.reduce((x, o) => x + o.t, 0) / sc.length).toFixed(1) : '–';
+  $('sAvgU').textContent = 'out of ' + examQs(cid).length;
+
+  // step 2: the code
+  const code = secCode && secCode.examId === cid && canJoin(exam.status) ? secCode.code : '';
+  $('aCode').textContent = code || '------';
+  $('aCode').setAttribute('aria-label', code ? 'Security code ' + code.split('').join(' ') : 'Security code not ready');
+  $('aCodeCopy').disabled = !code; $('aCodeNew').disabled = !canJoin(exam.status) || preview;
+  $('aCodeMeta').textContent = !code ? (canJoin(exam.status) ? 'No code is saved for this exam. Press Make a new code.' : startBlock() ? 'The code appears here once the questions are ready.' : 'Making the code…')
+    : (secCode.madeAt ? 'Made ' + fmtD(secCode.madeAt) + '. ' : '') + (live ? 'Anyone who joins now needs this code.' : 'If you press Start more than 2 hours after this, a fresh code is made for you.');
+  if (!code) codeArmed = false;
+  $('aCodeBox').hidden = !codeArmed;
+  $('aCodeQ').innerHTML = !code ? '<b>Make a code for this exam?</b> Staff need it to join.' : '<b>Make a new code?</b> ' + (p.waiting.length ? esc(plural(p.waiting.length, 'person is', 'people are')) + ' waiting with ' + esc(code) + '. They will need the new code to get in.' : 'Nobody is waiting with ' + esc(code) + ' right now.') + ' Anyone already answering carries on.';
+  $('aCodeNo').textContent = 'Keep ' + (code || 'this code');
+
+  // step 3: start / running
+  $('aIdle').hidden = live; $('aLiveRow').hidden = !live;
   if (!live) endArmed = false;
   $('aEnd').hidden = endArmed; $('aEndBox').hidden = !endArmed;
-  $('aStart').textContent = 'Start exam';
-  $('aStart').disabled = false; { const why = startBlock(); $('aNoQs').textContent = why ? 'Start exam is blocked. ' + why : ''; $('aNoQs').hidden = !why || s === 'live'; } $('aTry').disabled = !N;
-  const lc = lvCount(); $('thS').textContent = 'Score /' + N; $('thE').textContent = 'Easy /' + lc.e; $('thM').textContent = 'Medium /' + lc.m; $('thH').textContent = 'Hard /' + lc.h;
-  const nDone = now.filter(r => r.status === 'submitted').length, nProg = now.length - nDone;
-  const done = all.filter(r => r.status === 'submitted').length, prog = all.length - done;
-  $('aEndText').textContent = nProg
-    ? 'End the exam now? ' + nProg + ' ' + (nProg > 1 ? T.many + ' are' : T.one + ' is') + ' still taking the test. Their answers so far will be submitted.'
+  const nProg = cur.length - sub.length;
+  $('aEndText').textContent = nProg ? 'End the exam now? ' + plural(nProg, T.one + ' is', T.many + ' are') + ' still taking the test. Their answers so far will be submitted.'
     : 'End the exam now? Nobody is taking the test at the moment. No one else will be able to start.';
-  const scored = now.filter(r => r.sc && r.status === 'submitted'), avg = scored.length ? (scored.reduce((x,r)=>x+r.sc.t,0)/scored.length).toFixed(1) : '–';
-  $('aStats').innerHTML = [['Started',now.length,T.many,''],['In progress',nProg,'taking the test','t-brand'],['Submitted',nDone,'finished','t-green'],['Average',avg,scored.length ? 'out of ' + N : 'no scores yet','']]
-    .map(([l,v,u,c]) => '<div class="stat '+c+'"><span class="sl">'+l+'</span><b>'+v+'</b><span class="su">'+u+'</span></div>').join('');
-  $('aKeyWarn').hidden = !!key || !N || !$('aNoQs').hidden;
-  $('aKeyNote').textContent = key ? 'Marks are worked out automatically. Staff never see the correct answers or their marks.' : '';
-  paintExamPicker();
-  $('cAll').textContent = all.length; $('cRun').textContent = prog; $('cSub').textContent = done;
-  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === fSt)));
-  const q = fTxt.trim().toLowerCase(), qd = q.replace(/\D/g,'');
-  const rows = all.map((r,i) => ({r, i})).filter(({r}) =>
-    (fSt === 'all' || (fSt === 'sub' ? r.status === 'submitted' : r.status !== 'submitted')) &&
-    (!q || String(r.name).toLowerCase().includes(q) || (qd && String(r.phone).includes(qd))));
-  const filtered = q || fSt !== 'all';
-  $('aCount').textContent = all.length ? (filtered ? rows.length + ' of ' + all.length : all.length + ' ' + (all.length > 1 ? T.many : T.one)) : '';
-  if (!all.length && selExam){
-    $('aBody').innerHTML = '<tr><td colspan="10" class="empty"><b>No results for this exam</b><p>Pick another exam above.</p></td></tr>';
-  } else if (!all.length){
-    $('aBody').innerHTML = '<tr><td colspan="10" class="empty"><b>No one has started the test yet</b><p>' + (live ? 'The exam is open. Share the exam link with the ' + T.many + '. Rows appear here as each one starts.' : 'Press Start exam, then share the exam link with the ' + T.many + '.') + '</p></td></tr>';
-  } else if (!rows.length){
-    $('aBody').innerHTML = '<tr><td colspan="10" class="empty"><b>No one matches</b><p>Nothing matches “' + esc(fTxt.trim() || '') + '” with this filter.</p><button class="btn btn-ghost" type="button" data-clear="1">Clear search and filter</button></td></tr>';
-  } else {
-    $('aBody').innerHTML = rows.map(({r, i}) => {
-      const sc = r.sc, p = sc ? Math.round(sc.t/N*100) : null, cls = p === null ? '' : p >= 70 ? 'hi' : p >= 50 ? 'mid' : 'lo';
-      const st = r.status === 'submitted' ? '<span class="tag sub">Submitted</span>' : '<span class="tag run">On Q' + Math.min(N, (r.i||0)+1) + ' of ' + N + '</span>';
-      return '<tr><td><span class="rk">' + (i+1) + '</span><b>' + esc(r.name) + '</b>' + (r.extra ? '<span class="tag re" title="Only the first try counts">+' + r.extra + ' more tries</span>' : '') + '</td><td>' + esc(r.phone) + '</td><td>' + esc(r.position) + '</td><td class="num"><b>' + (sc ? sc.t : '–') + '</b></td><td class="num">' + (p === null ? '–' : '<span class="pct ' + cls + '">' + p + '%</span>') + '</td><td class="num">' + (sc ? sc.e : '–') + '</td><td class="num">' + (sc ? sc.m : '–') + '</td><td class="num">' + (sc ? sc.h : '–') + '</td><td class="num">' + (r.away ? '<span class="tag re" style="margin:0">' + r.away + '×</span>' : '0') + '</td><td>' + st + '</td></tr>';
-    }).join('');
-  }
-  $('aCode').textContent = secCode && secCode.examId === String(exam.startedAt) ? secCode.code : '------';
-  const nSel = clearRows().length, sid = shownId();
-  $('aClearText').textContent = 'Delete the ' + nSel + ' saved result' + (nSel === 1 ? '' : 's') + ' of the exam on ' + (sid ? new Date(+sid).toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'}) + ', ' + fmtT(+sid) : '') + '? Results of other exams are kept. Download the mark list first if you need it. This cannot be undone.';
+  { const why = startBlock(); $('aNoQs').textContent = why ? 'Start exam is blocked. ' + why : ''; $('aNoQs').hidden = !why || live; }
+  $('aTry').disabled = !N;
+  paintStart();
+
+  // who's in
+  $('waitT').textContent = 'Waiting to start · ' + p.waiting.length;
+  $('aPeople').innerHTML = p.waiting.length ? p.waiting.map(w => '<li><span><b>' + esc(w.name) + '</b> · ' + esc(w.clinic) + '</span><span class="t">joined ' + fmtT(w.joinedAt) + '</span></li>').join('')
+    : '<li class="none">' + (live ? 'Everyone who entered the code has started.' : open ? 'No one yet.' : 'No exam is set up yet.') + '</li>';
+  const lk = myLocks();
+  $('aLocks').innerHTML = 'Staff appear here after they enter the security code.' + (lk.length ? ' Locked out after 5 wrong tries: '
+    + lk.map(l => '<b>' + esc(l.name || 'Someone') + '</b>' + (l.clinic ? ' (' + esc(l.clinic) + ')' : '') + ' · <button class="link" type="button" data-unlock="' + esc(l._id) + '">Let them try again</button>').join('; ') : '');
+
+  paintMarks();
+  if (typeof paintQs === 'function') paintQs();
   paintAdminTimes();
+}
+
+function paintMarks(){
+  const list = examList(), id = shownId(), st = id ? examState(id) : '', qs = examQs(id), lc = lvOf(qs), n = qs.length;
+  // picker
+  const sel = $('aExamSel');
+  const html = list.length ? list.map(x => '<option value="' + x.id + '">' + esc(x.st === 'notstarted' ? fmtDay(+x.id) + ' · not started yet · ' + people().waiting.length + ' waiting'
+    : fmtD(examTime(x.id)) + ' · ' + (x.st === 'live' ? 'live now' : 'finished') + ' · ' + plural(new Set(rowsForExam(x.id).map(r => r.phone)).size, T.one, T.many)) + '</option>').join('') : '<option value="">No exams yet</option>';
+  if (sel.dataset.html !== html){ sel.innerHTML = html; sel.dataset.html = html; }
+  sel.value = id; sel.disabled = list.length < 2;
+  $('mSub').innerHTML = !id ? 'No exams yet' : st === 'notstarted' ? 'Showing <b>' + esc(fmtDay(+id)) + '</b> · not started yet'
+    : 'Showing <b>' + esc(examName(id)) + '</b> · ' + (st === 'live' ? 'live' : 'finished') + ' · <i class="live"></i>updates live' + (lastUpd ? ', last ' + fmtT(lastUpd) : '');
+  $('thS').textContent = 'Score /' + n; $('thE').textContent = 'Easy /' + lc.e; $('thM').textContent = 'Medium /' + lc.m; $('thH').textContent = 'Hard /' + lc.h;
+
+  const all = rank(rowsForExam(id)), done = all.filter(r => r.status === 'submitted').length;
+  $('cAll').textContent = all.length; $('cRun').textContent = all.length - done; $('cSub').textContent = done;
+  document.querySelectorAll('.seg button[data-f]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === fSt)));
+  const q = fTxt.trim(), ql = q.toLowerCase(), qd = q.replace(/\D/g, '');
+  const hit = r => !q || String(r.name).toLowerCase().includes(ql) || String(r.clinic || '').toLowerCase().includes(ql) || (qd.length >= 3 && String(r.phone).includes(qd));
+  const rows = all.map((r, i) => ({r, i})).filter(({r}) => (fSt === 'all' || (fSt === 'sub' ? r.status === 'submitted' : r.status !== 'submitted')) && hit(r));
+  const filtered = q || fSt !== 'all', res = $('aRes'), cols = 10;
+  if (st === 'notstarted'){
+    res.innerHTML = '';
+    const lf = lastFinished(list), w = people().waiting.length;
+    $('aBody').innerHTML = '<tr><td colspan="' + cols + '" class="empty"><b>This exam hasn\'t started yet</b><p>' + esc(plural(w, 'person is', 'people are')) + ' waiting. Their marks will appear here as they finish.'
+      + (lf ? ' To see earlier marks, choose a finished exam above.</p><button class="btn btn-ghost" type="button" data-go="' + lf + '">Show ' + esc(examName(lf)) + '</button>' : '</p>') + '</td></tr>';
+    return;
+  }
+  res.innerHTML = filtered && all.length ? 'Showing <b>' + rows.length + ' of ' + all.length + '</b> in the ' + esc(examName(id)) + (q ? ' matching “' + esc(q) + '”' : '')
+    + (fSt !== 'all' ? ' · ' + (fSt === 'run' ? 'in progress' : 'submitted') + ' only' : '') + ' <button class="link" type="button" data-clear="1">Clear search and filter</button>' : '';
+  if (!all.length){
+    $('aBody').innerHTML = '<tr><td colspan="' + cols + '" class="empty"><b>' + (st === 'live' ? 'No one has started yet' : 'No results for this exam') + '</b><p>'
+      + (st === 'live' ? 'Rows appear here as each ' + esc(T.one) + ' starts.' : 'Pick another exam above.') + '</p></td></tr>';
+    return;
+  }
+  if (!rows.length){
+    $('aBody').innerHTML = '<tr><td colspan="' + cols + '" class="empty"><b>No one matches “' + esc(q || (fSt === 'run' ? 'In progress' : 'Submitted')) + '”</b><p>Check the spelling, try part of the name, or search the last 4 digits of the phone number. Search looks only in the '
+      + esc(examName(id)) + '.</p><button class="btn btn-ghost" type="button" data-clear="1">Clear search and filter</button></td></tr>';
+    return;
+  }
+  const hl = t => { t = String(t == null ? '' : t); if (!ql) return esc(t); const i = t.toLowerCase().indexOf(ql); return i < 0 ? esc(t) : esc(t.slice(0, i)) + '<mark>' + esc(t.slice(i, i + ql.length)) + '</mark>' + esc(t.slice(i + ql.length)); };
+  const hlPh = t => { t = String(t || ''); const i = qd.length >= 3 ? t.indexOf(qd) : -1; return i < 0 ? esc(t) : esc(t.slice(0, i)) + '<mark>' + esc(qd) + '</mark>' + esc(t.slice(i + qd.length)); };
+  $('aBody').innerHTML = rows.map(({r, i}) => {
+    const sc = r.sc, p = sc ? sc.pct : null, cls = p === null ? '' : p >= 70 ? 'hi' : p >= 50 ? 'mid' : 'lo';
+    const stt = r.status === 'submitted' ? '<span class="tag sub">Submitted</span>' : '<span class="tag run">On Q' + Math.min(n, (r.i||0)+1) + ' of ' + n + '</span>';
+    return '<tr><td><span class="rk">' + (i+1) + '</span><b>' + hl(r.name) + '</b>' + (r.extra ? '<span class="tag re" title="Only the first try counts">+' + r.extra + ' more tries</span>' : '') + '</td><td>' + (r.clinic ? hl(r.clinic) : '<span class="muted">–</span>') + '</td><td>' + hlPh(r.phone)
+      + '</td><td class="num"><b>' + (sc ? sc.t : '–') + '</b></td><td class="num">' + (p === null ? '–' : '<span class="pct ' + cls + '">' + p + '%</span>') + '</td><td class="num">' + (sc ? sc.e : '–') + '</td><td class="num">' + (sc ? sc.m : '–') + '</td><td class="num">' + (sc ? sc.h : '–')
+      + '</td><td class="num">' + (r.away ? '<span class="tag re" style="margin:0">' + r.away + '×</span>' : '0') + '</td><td>' + stt + '</td></tr>';
+  }).join('');
 }
 function paintAdminTimes(){
   if (!isAdmin || $('sAdmin').hidden) return; const s = eff();
-  if (s === 'live'){ $('aBig').textContent = mmss(exam.endsAt - Date.now()) + ' left'; $('aTimes').textContent = 'Started at ' + fmtT(exam.liveAt || exam.startedAt) + ' · closes at ' + fmtT(exam.endsAt); }
-  else if (s === 'open'){ $('aBig').textContent = 'Ready to start'; $('aTimes').textContent = 'The security code is ready. Share the exam link and the code now: staff can join and wait. Press Start exam when everyone is in.' + (exam.lastId ? ' The marks below are from the last exam.' : ''); }
-  else if (exam.startedAt){ $('aBig').textContent = 'Exam closed'; $('aTimes').textContent = 'Last exam opened at ' + fmtT(exam.startedAt) + ' and closed at ' + fmtT(exam.endedAt || exam.endsAt) + '. Its marks stay below until you start a new exam.'; }
-  else { $('aBig').textContent = 'Not started'; $('aTimes').textContent = (N ? 'Choose how long the exam stays open and press Start exam. Staff with the exam link can begin straight away.' : 'Add questions to this assessment before starting an exam.'); }
-  if (exam.status === 'live' && s === 'ended' && !paintAdminTimes.closing){ paintAdminTimes.closing = true; db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt: exam.endsAt})).finally(() => paintAdminTimes.closing = false); }
+  if (s === 'live'){
+    const left = mmss(exam.endsAt - Date.now());
+    chip($('aChip'), 'live', 'Exam is live · ' + left + ' left');
+    $('aBig').textContent = left + ' left'; $('aTimes').textContent = 'Started at ' + fmtT(exam.liveAt || exam.startedAt) + ' · closes at ' + fmtT(exam.endsAt) + '.';
+  }
+  else if (preview) chip($('aChip'), 'idle', 'Preview');
+  else if (exam.status === 'open') chip($('aChip'), 'idle', 'Ready · not started');
+  else if (exam.startedAt) chip($('aChip'), 'ended', 'Exam has ended');
+  else chip($('aChip'), 'idle', N ? 'Getting ready…' : 'No questions yet');
+  if (exam.status === 'live' && s === 'ended' && !paintAdminTimes.closing){ paintAdminTimes.closing = true; db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt: exam.endsAt})).then(() => clearWaiting(TR)).catch(() => {}).finally(() => paintAdminTimes.closing = false); }
 }
-$('aMins').addEventListener('input', () => { const v = +$('aMins').value; $('aMinsWarn').hidden = !(v && v < needMin()); });
 // why the exam can't start yet ('' when it can): needs uploaded questions and a matching answer key
 function startBlock(){
   if (!T.uploaded || !N) return 'No questions have been uploaded for the ' + T.name + '. Add the questions in the Questions section below, then start the exam.';
@@ -436,6 +603,20 @@ function startBlock(){
   if (!Array.isArray(a) || !a.length) return 'The correct answers are missing. Add the questions again in the Questions section below, then start the exam.';
   if (a.length !== N || a.some((x, i) => !(x >= 0 && x < QS[i].o.length))) return 'The correct answers don\'t match the ' + N + ' questions. Add the questions again in the Questions section below, then start the exam.';
   return '';
+}
+// waiting list and lockouts of an assessment are cleared when its exam ends (or a new one is set up)
+function clearWaiting(tr, keepId){
+  const ws = waits.filter(w => w.track === tr && w.examId !== keepId), ls = keepId ? [] : locks.filter(l => l.track === tr);
+  return Promise.all(ws.map(w => db.doc('waiting/' + w._id).delete()).concat(ls.map(l => db.doc('lockouts/' + l._id).delete()))).catch(() => {});
+}
+// a fresh security code for the current exam: the old one stops working at once
+async function makeCode(){
+  const code = newCode(), t = Date.now(), id = curId();
+  await db.doc(T.code).set({code, examId: id, madeAt: t});
+  const e = Object.assign({}, exam, {codeAt: t}); delete e.codeHash;
+  await db.doc(T.state).set(e);
+  secCode = codes[TR] = {code, examId: id, madeAt: t}; exam = states[TR] = e;
+  return code;
 }
 // set up the next exam with its security code as soon as questions are ready, so the code can be shared
 // before the start; staff can join and wait, and only Start exam opens the questions
@@ -446,64 +627,102 @@ function prepareExam(force){
   const prev = exam, t = Date.now(), code = newCode();
   let done; preparing = new Promise(r => done = r);   // claim the slot before any write, so a repaint can't start a second one
   (async () => {
-    await db.doc(T.code).set({code, examId:String(t)});
-    const e = {status:'open', startedAt:t, codeHash: await hashCode(code, String(t)), count:N};
+    await db.doc(T.code).set({code, examId: String(t), madeAt: t});
+    const e = {status: 'open', startedAt: t, codeAt: t, count: N};
     if (prev.startedAt && prev.status !== 'open') e.lastId = String(prev.startedAt);
     await db.doc(T.state).set(e);
-    secCode = codes[TR] = {code, examId:String(t)};
+    secCode = codes[TR] = {code, examId: String(t), madeAt: t};
+    clearWaiting(TR, String(t));
   })().then(() => done(), e => { $('aErr').textContent = 'Could not set up the next exam: ' + errText(e) + '. Reload the page to try again.'; done(); }).finally(() => { preparing = null; });
   return preparing;
 }
 $('aStart').onclick = async () => {
   $('aErr').textContent = '';
-  // check the saved copy too, in case questions or key changed in another window
+  if (minsErr()){ paintStart(); $('aMins').focus(); return; }
+  startBusy = true; paintStart();
   try {
+    // check the saved copy too, in case questions or key changed in another window
     const [qs, k] = await Promise.all([db.doc('questions/' + TR).get(), db.doc(T.key).get()]);
-    if (qs.exists && Array.isArray(qs.data().qs)) setQs(TR, qs.data().qs); else { T.uploaded = false; }
+    if (qs.exists && Array.isArray(qs.data().qs)) setQs(TR, qs.data().qs); else T.uploaded = false;
     key = keys[TR] = k.exists ? k.data() : null;
-  } catch(e){ $('aErr').textContent = 'Could not check the questions: ' + errText(e) + '. Try again.'; return; }
-  const why = startBlock();
-  if (why){ $('aErr').textContent = 'Exam not started. ' + why; paintAdmin(); return; }
-  const m = Math.min(180, Math.max(5, +$('aMins').value || 35)), t = Date.now();
-  $('aMins').value = m; $('aErr').textContent = ''; $('aStart').disabled = true;
-  try {
-    if (exam.status !== 'open' || !exam.codeHash || !secCode || secCode.examId !== String(exam.startedAt)) await prepareExam(true);
-    const e = Object.assign({}, exam, {status:'live', liveAt:t, endsAt:t+m*60000, windowMin:m, count:N}); delete e.lastId;
-    await db.doc(T.state).set(e); fSt = 'all'; fTxt = ''; $('aSearch').value = '';
-    msg('Exam started. It closes at ' + fmtT(t+m*60000) + '. Staff who are waiting can now begin answering. Security code: ' + (secCode ? secCode.code : '') + '.');
+    const why = startBlock();
+    if (why) throw new Error('Exam not started. ' + why);
+    if (exam.status !== 'open' || !secCode || secCode.examId !== curId()) await prepareExam(true);
+    let note = '';
+    if (Date.now() - ((secCode && secCode.madeAt) || 0) > 2 * 3600e3){
+      const c = await makeCode();
+      note = ' The security code was more than 2 hours old, so a fresh code was made: ' + c + '. Anyone who hasn\'t joined yet needs this new code.';
+    }
+    const n = people().waiting.length, m = +$('aMins').value, t = Date.now(), id = curId();
+    const e = Object.assign({}, exam, {status: 'live', liveAt: t, endsAt: t + m * 60000, windowMin: m, count: N}); delete e.lastId; delete e.codeHash;
+    // freeze this exam's questions and answers in the same step that starts it
+    const b = db.batch();
+    b.set(db.doc('exams/' + fzId(TR, id)), {track: TR, examId: id, qs: QS, answers: key.answers.slice(0, N), liveAt: t, endsAt: e.endsAt, windowMin: m, startedBy: (typeof myEmail === 'string' && myEmail) || '', frozenAt: t});
+    b.set(db.doc(T.state), e);
+    await b.commit();
+    fSt = 'all'; fTxt = ''; $('aSearch').value = ''; selExam = ''; codeArmed = false;
+    msg('Exam started for ' + plural(n, 'person', 'people') + ' waiting. It closes at ' + fmtT(e.endsAt) + '.' + note, !!note);
   }
-  catch(e){ $('aErr').textContent = 'Could not start the exam: ' + errText(e) + '. Check your connection and press Start exam again.'; }
-  $('aStart').disabled = false;
+  catch(e){ $('aErr').textContent = /^Exam not started/.test(e.message || '') ? e.message : 'Could not start the exam: ' + errText(e) + '. Check your connection and press Start exam again.'; }
+  startBusy = false; paintAdmin();
 };
 $('aEnd').onclick = () => { endArmed = true; paintAdmin(); $('aEndNo').focus(); };
 $('aEndNo').onclick = () => { endArmed = false; paintAdmin(); $('aEnd').focus(); };
 $('aEndYes').onclick = async () => {
   $('aEndYes').disabled = true;
-  try { await db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt:Date.now()})); endArmed = false; msg('Exam ended at ' + fmtT(Date.now()) + '. Anyone still answering has had their answers saved as they were.'); }
+  try { await db.doc(T.state).set(Object.assign({}, exam, {status:'ended', endedAt:Date.now()})); endArmed = false; clearWaiting(TR); msg('Exam ended at ' + fmtT(Date.now()) + '. Anyone still answering has had their answers saved as they were.'); }
   catch(e){ $('aErr').textContent = 'Could not end the exam: ' + errText(e) + '. Try again.'; }
   $('aEndYes').disabled = false; paintAdmin();
 };
-// results of the exam picked in "Show results for" (only these are cleared)
+// "Let them try again": lift a lockout
+$('aLocks').addEventListener('click', async ev => {
+  const b = ev.target.closest('[data-unlock]'); if (!b) return;
+  const l = locks.find(x => x._id === b.dataset.unlock); b.disabled = true;
+  try { await db.doc('lockouts/' + b.dataset.unlock).delete(); msg((l && l.name ? l.name : 'They') + ' can try the code again now.'); }
+  catch(e){ b.disabled = false; msg('Could not unlock: ' + errText(e) + '. Try again.'); }
+});
+
+// results of the exam picked in "Show results for" (only these are deleted)
 const inSel = r => (r.track || 'pharmacist') === TR && shownId() && String(r.examId) === shownId();
 const clearRows = () => results.filter(inSel);
+const menuOpen = on => { $('aMenu').hidden = !on; $('aMore').setAttribute('aria-expanded', String(on)); };
+$('aMore').onclick = () => menuOpen($('aMenu').hidden);
+document.addEventListener('click', ev => { if (!ev.target.closest('.more')) menuOpen(false); });
+document.addEventListener('keydown', ev => { if (ev.key === 'Escape' && !$('aMenu').hidden){ menuOpen(false); $('aMore').focus(); } });
 $('aClear').onclick = () => {
+  menuOpen(false);
+  const id = shownId(), n = new Set(rowsForExam(id).map(r => r.phone)).size;
   if (!clearRows().length){ msg('There are no saved results for this exam.'); return; }
-  if (eff() === 'live' && shownId() === marksId(exam)){ msg('This exam is running. End it before clearing its results.'); return; }
-  $('aClearBox').hidden = false; paintAdmin(); $('aClearNo').focus();
+  if (eff() === 'live' && id === curId()){ msg('This exam is running. End it before deleting its results.'); return; }
+  $('aClearText').innerHTML = '<b>Delete the results of the ' + esc(examName(id)) + '?</b> This removes ' + esc(plural(n, T.one + '\'s', T.many + '\'')) + ' marks and can\'t be undone. Download the Excel file first if you need them.';
+  $('aClearYes').textContent = 'Delete ' + plural(n, 'result', 'results');
+  $('aClearBox').hidden = false; $('aClearNo').focus();
 };
-$('aClearNo').onclick = () => { $('aClearBox').hidden = true; $('aClear').focus(); };
+$('aClearNo').onclick = () => { $('aClearBox').hidden = true; $('aMore').focus(); };
 $('aClearYes').onclick = async () => {
-  if (eff() === 'live' && shownId() === marksId(exam)){ $('aClearBox').hidden = true; msg('This exam is running. End it before clearing its results.'); return; }
-  const n = clearRows().length; $('aClearYes').disabled = true;
-  try { await Promise.all(Object.keys(rawDocs).map(id => { const o = rawDocs[id], keep = {}; let drop = 0;
+  const id = shownId();
+  if (eff() === 'live' && id === curId()){ $('aClearBox').hidden = true; msg('This exam is running. End it before deleting its results.'); return; }
+  const n = new Set(rowsForExam(id).map(r => r.phone)).size, name = examName(id); $('aClearYes').disabled = true;
+  try {
+    await Promise.all(Object.keys(rawDocs).map(d => { const o = rawDocs[d], keep = {}; let drop = 0;
       Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0 && inSel(o[k])) drop++; else keep[k] = o[k]; });
-      if (!drop) return null; return Object.keys(keep).length ? db.doc('results/' + id).set(keep) : db.doc('results/' + id).delete(); })); $('aClearBox').hidden = true; msg(n + ' result' + (n === 1 ? '' : 's') + ' of this exam deleted. Other exams were not changed.'); }
-  catch(e){ msg('Could not delete the results: ' + errText(e) + '. Nothing was changed on your screen; try again.'); }
-  $('aClearYes').disabled = false;
+      if (!drop) return null; return Object.keys(keep).length ? db.doc('results/' + d).set(keep) : db.doc('results/' + d).delete(); }));
+    await db.doc('marks/' + fzId(TR, id)).delete().catch(() => {});
+    $('aClearBox').hidden = true; selExam = ''; msg(plural(n, 'result', 'results') + ' of the ' + name + ' deleted. Other exams were not changed.');
+  }
+  catch(e){ msg('Could not delete the results: ' + errText(e) + '. Try again.'); }
+  $('aClearYes').disabled = false; paintAdmin();
 };
-document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { fSt = b.dataset.f; paintAdmin(); });
-$('aSearch').addEventListener('input', () => { fTxt = $('aSearch').value; paintAdmin(); });
-$('aBody').addEventListener('click', ev => { if (ev.target.closest('[data-clear]')){ fSt = 'all'; fTxt = ''; $('aSearch').value = ''; paintAdmin(); $('aSearch').focus(); } });
+$('aExamSel').onchange = () => { selExam = $('aExamSel').value; fSt = 'all'; fTxt = ''; $('aSearch').value = ''; $('aClearBox').hidden = true; paintMarks(); };
+document.querySelectorAll('.seg button[data-f]').forEach(b => b.onclick = () => { fSt = b.dataset.f; paintMarks(); });
+$('aSearch').addEventListener('input', () => { fTxt = $('aSearch').value; paintMarks(); });
+$('aSearch').addEventListener('keydown', ev => { if (ev.key === 'Escape'){ ev.preventDefault(); $('aSearch').value = ''; fTxt = ''; paintMarks(); } });
+const clearSearch = () => { fSt = 'all'; fTxt = ''; $('aSearch').value = ''; paintMarks(); $('aSearch').focus(); };
+$('aRes').addEventListener('click', ev => { if (ev.target.closest('[data-clear]')) clearSearch(); });
+$('aBody').addEventListener('click', ev => {
+  if (ev.target.closest('[data-clear]')) return clearSearch();
+  const g = ev.target.closest('[data-go]'); if (g){ selExam = g.dataset.go; fSt = 'all'; fTxt = ''; $('aSearch').value = ''; paintMarks(); $('aExamSel').focus(); }
+});
 const libs = {};
 function loadLib(src){ return libs[src] || (libs[src] = new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; if (LIB_SRI[src]){ s.integrity = LIB_SRI[src]; s.crossOrigin = 'anonymous'; } s.onload = ok; s.onerror = () => { delete libs[src]; no(new Error('load')); }; document.head.appendChild(s); })); }
 // SheetJS 0.20.3 (0.18.x has known problems reading files); pinned by hash so a changed file is refused
@@ -511,13 +730,14 @@ const LIB_XLSX = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min
 const LIB_SRI = {[LIB_XLSX]: 'sha384-EnyY0/GSHQGSxSgMwaIPzSESbqoOLSexfnSMN2AP+39Ckmn92stwABZynq1JyzdT'};
 const LIB_PDF = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
 const LIB_PDFT = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+// downloads use the picked exam's own frozen questions (never the current question bank)
 function markData(){
-  const rows = rank(rowsForExam());
-  const lc = lvCount(), head = ['Rank','Name','Phone','Position','Score','Out of','Percentage','Easy (' + lc.e + ')','Medium (' + lc.m + ')','Hard (' + lc.h + ')','Answered','Left the test (times)','Status','Started','Finished'];
-  const body = rows.map((r,i) => { const s = r.sc || {}; return [i+1, r.name, r.phone, r.position, s.t == null ? '' : s.t, N, s.t == null ? '' : Math.round(s.t/N*100) + '%', s.e == null ? '' : s.e, s.m == null ? '' : s.m, s.h == null ? '' : s.h, s.n == null ? '' : s.n, r.away || 0, r.status === 'submitted' ? 'Submitted' : 'In progress (Q' + Math.min(N,(r.i||0)+1) + ')', r.startedAt ? new Date(r.startedAt).toLocaleString() : '', r.finishedAt ? new Date(r.finishedAt).toLocaleString() : '']; });
-  const d0 = new Date(+shownId() || Date.now());
+  const id = shownId(), rows = rank(rowsForExam(id)), qs = examQs(id), n = qs.length, lc = lvOf(qs);
+  const head = ['Rank','Name','Clinic','Phone','Position','Score','Out of','Percentage','Easy (' + lc.e + ')','Medium (' + lc.m + ')','Hard (' + lc.h + ')','Answered','Left the test (times)','Status','Started','Finished'];
+  const body = rows.map((r,i) => { const s = r.sc || {}; return [i+1, r.name, r.clinic || '', r.phone, r.position, s.t == null ? '' : s.t, n, s.t == null ? '' : s.pct + '%', s.e == null ? '' : s.e, s.m == null ? '' : s.m, s.h == null ? '' : s.h, s.n == null ? '' : s.n, r.away || 0, r.status === 'submitted' ? 'Submitted' : 'In progress (Q' + Math.min(n,(r.i||0)+1) + ')', r.startedAt ? fmtD(r.startedAt) : '', r.finishedAt ? fmtD(r.finishedAt) : '']; });
+  const d0 = new Date(examTime(id) || Date.now());
   const stamp = d0.getFullYear() + '-' + String(d0.getMonth()+1).padStart(2,'0') + '-' + String(d0.getDate()).padStart(2,'0');
-  return {rows, head, body, stamp, d0};
+  return {rows, head, body, stamp, d0, n, lc, name: id ? examName(id) : ''};
 }
 async function logoPng(){
   const img = document.querySelector('.logo img'); const c = document.createElement('canvas');
@@ -534,8 +754,8 @@ async function buildFile(kind, m){
   if (kind === 'xlsx'){
     await loadLib(LIB_XLSX);
     const ws = XLSX.utils.aoa_to_sheet([m.head].concat(m.body));
-    ws['!cols'] = [6,24,14,20,8,8,11,10,12,9,10,12,20,22,22].map(w => ({wch:w}));
-    ws['!autofilter'] = {ref: 'A1:O' + (m.body.length + 1)};
+    ws['!cols'] = [6,24,18,14,20,8,8,11,10,12,9,10,12,20,22,22].map(w => ({wch:w}));
+    ws['!autofilter'] = {ref: 'A1:P' + (m.body.length + 1)};
     const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'Mark list');
     return {filename: base + '.xlsx', data: XLSX.write(wb, {bookType:'xlsx', type:'array'})};
   }
@@ -547,9 +767,9 @@ async function buildFile(kind, m){
   doc.setFontSize(15); doc.setTextColor(26,14,80); doc.text(T.name + ' - mark list', W - 12, 15, {align:'right'});
   doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(92,84,120);
   const done = m.rows.filter(r => r.status === 'submitted').length;
-  doc.text('Exam opened ' + m.d0.toLocaleString() + '  |  ' + m.rows.length + ' ' + T.many + ', ' + done + ' submitted', W - 12, 21, {align:'right'});
+  doc.text(m.name + '  |  ' + m.rows.length + ' ' + T.many + ', ' + done + ' submitted', W - 12, 21, {align:'right'});
   doc.setDrawColor(232,106,26); doc.setLineWidth(0.66); doc.line(12, 29, W - 12, 29);
-  const cols = [0,1,2,3,4,6,7,8,9,11,12];
+  const cols = [0,1,2,3,5,7,8,9,10,12,13];
   doc.autoTable({
     startY: 33, margin:{left:12, right:12},
     head: [cols.map(c => m.head[c])], body: m.body.map(r => cols.map(c => r[c])),
@@ -557,7 +777,7 @@ async function buildFile(kind, m){
     headStyles:{fillColor:[74,47,160], textColor:255, fontStyle:'bold', fontSize:7.5},
     alternateRowStyles:{fillColor:[248,247,251]},
     columnStyles:{0:{halign:'right', cellWidth:12}, 1:{fontStyle:'bold'}, 4:{halign:'right'}, 5:{halign:'right'}, 6:{halign:'right'}, 7:{halign:'right'}, 8:{halign:'right'}, 9:{halign:'right'}},
-    didDrawPage: () => { doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(110,102,140); doc.text('Only each person\'s first attempt is counted. Scores out of ' + N + ': Easy ' + lvCount().e + ', Medium ' + lvCount().m + ', Hard ' + lvCount().h + '.', 12, H - 8); doc.text('Page ' + doc.internal.getNumberOfPages(), W - 12, H - 8, {align:'right'}); }
+    didDrawPage: () => { doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(110,102,140); doc.text('Only each person\'s first attempt is counted. Scores out of ' + m.n + ': Easy ' + m.lc.e + ', Medium ' + m.lc.m + ', Hard ' + m.lc.h + '.', 12, H - 8); doc.text('Page ' + doc.internal.getNumberOfPages(), W - 12, H - 8, {align:'right'}); }
   });
   return {filename: base + '.pdf', data: doc.output('arraybuffer')};
 }
@@ -581,12 +801,14 @@ $('aCodeCopy').onclick = async () => {
   try { await navigator.clipboard.writeText(c); b.textContent = 'Copied'; setTimeout(() => b.textContent = 'Copy code', 2000); }
   catch(e){ msg('Copying is blocked here. The security code is ' + c + '.'); }
 };
-$('aCodeNew').onclick = async () => {
-  if (!canJoin(eff())) return;
-  const b = $('aCodeNew'); b.disabled = true;
-  try { const code = newCode(), id = String(exam.startedAt); await db.doc(T.code).set({code, examId:id}); await db.doc(T.state).set(Object.assign({}, exam, {codeHash: await hashCode(code, id)})); msg('New security code: ' + code + '. The old code no longer works. Anyone already taking the test carries on.'); }
+// a new code needs a yes first: it says how many people are waiting with the old one
+$('aCodeNew').onclick = () => { if (!canJoin(eff())) return; codeArmed = true; paintAdmin(); $('aCodeNo').focus(); };
+$('aCodeNo').onclick = () => { codeArmed = false; paintAdmin(); $('aCodeNew').focus(); };
+$('aCodeYes').onclick = async () => {
+  const b = $('aCodeYes'), n = people().waiting.length; b.disabled = true;
+  try { const code = await makeCode(); codeArmed = false; msg('New code ' + code + '. ' + (n ? 'Share it with the ' + plural(n, 'person', 'people') + ' who were waiting. ' : '') + 'The old code no longer works. Anyone already answering carries on.', true); }
   catch(e){ $('aErr').textContent = 'Could not make a new code: ' + errText(e) + '. Try again.'; }
-  b.disabled = false;
+  b.disabled = false; paintAdmin();
 };
 $('aCopy').onclick = async () => {
   const b = $('aCopy');
@@ -599,11 +821,10 @@ function applyTrackText(){
   $('fPos').innerHTML = '<option value="">Select your position</option>' + T.positions.map(p => '<option>' + esc(p) + '</option>').join('');
   $('lBlurb').textContent = N ? N + ' questions, ' + SEC + ' seconds each. Fill in your details to join. About ' + needMin() + ' minutes in all.' : 'This assessment is not open yet.';
   $('rN').textContent = N || exam.count || '–';
-  $('aNeed').textContent = N ? 'Each person needs about ' + Math.ceil(N * SEC / 60) + ' minutes to answer all ' + N + ' questions (' + SEC + ' seconds each). Keep the exam open a few minutes longer so anyone who joins late can still finish.' : 'This assessment has no questions yet.';
-  $('aMinsWarn').textContent = 'Under ' + needMin() + ' minutes, anyone who joins late will be cut off before the last question.';
-  $('aMinsWarn').hidden = !(+$('aMins').value < needMin());
+  $('aNeed').textContent = N ? 'Each person needs about ' + needMin() + ' minutes for ' + N + ' questions (' + SEC + ' seconds each). Allow a few minutes more for late joiners.' : 'This assessment has no questions yet.';
+  $('aMinsWarn').textContent = 'Under ' + needMin() + ' minutes: people who join late may not reach question ' + N + '.';
   const link = BASE_URL + '#' + TR;
-  $('aLink').value = link; $('aShareT').textContent = 'Exam link for ' + T.many;
+  $('aLink').value = link;
   $('aWa').href = 'https://wa.me/?text=' + encodeURIComponent('SugarCARE ' + T.name + '. Open this link at exam time, keep the page open until you submit: ' + link);
 }
 function homeLine(tr){
@@ -629,9 +850,9 @@ function route(){
   if (!isAdmin) return;
   const h = (location.hash || '').slice(1);
   if (TRACKS[h]){
-    useTrack(h); applyTrackText(); selExam = ''; fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = ''; if (typeof qRepaint === 'function') qRepaint();
-    $('who').textContent = 'Invigilator · ' + T.name; show('sAdmin'); paintAdmin(); $('aHome').focus();
-  } else { $('who').textContent = 'Invigilator view'; $('topName').textContent = 'All assessments'; show('sHome'); paintHome(); }
+    useTrack(h); applyTrackText(); selExam = ''; fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; codeArmed = false; $('aClearBox').hidden = true; menuOpen(false); msg(''); $('aErr').textContent = ''; if (typeof qRepaint === 'function') qRepaint();
+    $('who').textContent = 'Invigilator · ' + T.name; document.body.classList.add('inv'); show('sAdmin'); paintAdmin(); $('aHome').focus();
+  } else { $('who').textContent = 'Invigilator view'; $('topName').textContent = 'All assessments'; document.body.classList.remove('inv'); show('sHome'); paintHome(); }
 }
 window.addEventListener('hashchange', () => { if (preview) exitPreview(); else route(); });
 
@@ -642,16 +863,16 @@ async function startPreview(){
   const t = Date.now(), code = newCode();
   exam = {status:'live', startedAt:t, endsAt:t + (N * SEC + 600) * 1000, windowMin:Math.ceil(N * SEC / 60) + 10, codeHash: await hashCode(code, String(t))};
   $('pvCode').textContent = code; $('pvBar').hidden = false;
-  sess = null; saveFailed = false; finalSaved = null; lastSaved = 0; codeTries = 0; codeLockUntil = 0;
-  $('fName').value = 'Test run'; $('fPhone').value = '9000000000'; $('fPos').selectedIndex = 1;
-  ['fName','fPhone','fPos','fCode'].forEach(id => fieldErr(id, '')); $('fCode').value = '';
+  sess = null; saveFailed = false; finalSaved = null; lastSaved = 0;
+  $('fName').value = 'Test run'; $('fPhone').value = '9000000000'; $('fClinic').value = 'Head office'; $('fPos').selectedIndex = 1;
+  ['fName','fPhone','fClinic','fPos','fCode'].forEach(id => fieldErr(id, '')); $('fCode').value = '';
   $('loginErr').hidden = true; $('loginBtn').disabled = false;
-  whoLine(); show('sLogin'); statusChip($('stChip')); $('fName').focus();
+  document.body.classList.remove('inv'); whoLine(); show('sLogin'); statusChip($('stChip')); $('fName').focus();
 }
 function exitPreview(){
   preview = false; lsSet(null); LS = T.ls; letSleep(); sess = null;
   exam = states[TR] || {status:'idle'}; $('pvBar').hidden = true;
-  ['fName','fPhone','fPos','fCode'].forEach(id => { $(id).value = ''; fieldErr(id, ''); }); phoneWarnReset();
+  ['fName','fPhone','fClinic','fPos','fCode'].forEach(id => { $(id).value = ''; fieldErr(id, ''); }); phoneWarnReset();
   route();
 }
 $('aTry').onclick = () => startPreview();
@@ -687,27 +908,18 @@ function resume(){
 function applyResults(s){
   resDocs = s.docs.map(d => d.id); results = []; Object.keys(rawDocs).forEach(k => delete rawDocs[k]);
   s.docs.forEach(d => { const o = d.data(); rawDocs[d.id] = o; Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0) results.push(Object.assign({_id:k}, o[k])); }); });
-  $('aUpdated').textContent = 'Updated ' + fmtT(Date.now()); paintAdmin(); paintHome();
+  lastUpd = Date.now(); freezeOld(); saveMarks(); paintAdmin(); paintHome();
 }
-function examLabel(id, first){
-  const d = new Date(+id), n = new Set(results.filter(r => (r.track || 'pharmacist') === TR && String(r.examId) === id).map(r => r.phone)).size;
-  return (first ? 'Latest exam · ' : '') + d.toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'}) + ', ' + fmtT(+id) + ' · ' + n + ' ' + (n === 1 ? T.one : T.many);
+// staff: their own lockout record (after 5 wrong codes). Deleting it ("Let them try again") unlocks the code box.
+function watchLock(){
+  if (!uid) return;
+  if (lockUnsub) lockUnsub();
+  lockUnsub = db.doc('lockouts/' + uid + '_' + TR).onSnapshot(s => {
+    const was = lockedOut; lockedOut = s.exists;
+    if (was && !lockedOut){ if (sess){ sess.tries = 0; lsSet(sess); } fieldErr('fCode', ''); say('You can try the code again'); }
+    refreshCode();
+  }, () => {});
 }
-function paintExamPicker(){
-  const ids = examIds(), sel = $('aExamSel');
-  if (selExam && !ids.includes(selExam)) selExam = '';
-  const html = ids.length ? ids.map((id, i) => '<option value="' + (i ? id : '') + '">' + esc(examLabel(id, !i)) + '</option>').join('') : '<option value="">No exams yet</option>';
-  if (sel.dataset.html !== html){ sel.innerHTML = html; sel.dataset.html = html; }
-  sel.value = selExam; sel.disabled = ids.length < 2;
-  $('aOldNote').hidden = !selExam;
-}
-$('aExamSel').onchange = () => { selExam = $('aExamSel').value; fSt = 'all'; fTxt = ''; $('aSearch').value = ''; paintAdmin(); };
-$('aRefresh').onclick = async () => {
-  const b = $('aRefresh'); b.disabled = true; b.textContent = 'Refreshing…';
-  try { applyResults(await db.collection('results').get({source: 'server'})); msg('Mark list refreshed.'); }
-  catch(e){ msg('Could not refresh the mark list: ' + errText(e) + '. Check your internet and try again.'); }
-  b.disabled = false; b.textContent = 'Refresh';
-};
 async function boot(){
   { const h = (location.hash || '').slice(1); useTrack(TRACKS[h] ? h : 'pharmacist'); }
   applyTrackText(); show('sLogin'); statusChip($('stChip'));
@@ -722,14 +934,19 @@ async function boot(){
   }
   if (isAdmin){
     route();
+    const all = (c, f) => db.collection(c).onSnapshot(f, () => {});
     Object.keys(TRACKS).forEach(tr => {
       db.doc(TRACKS[tr].state).onSnapshot(s => { states[tr] = s.exists ? s.data() : {status:'idle'}; if (tr === TR && !preview) exam = states[tr]; paintAdmin(); paintHome(); }, () => {});
-      db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; paintAdmin(); if (typeof qRepaint === 'function') qRepaint(); });
+      db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; freezeOld(); paintAdmin(); if (typeof qRepaint === 'function') qRepaint(); });
       db.doc(TRACKS[tr].code).onSnapshot(s => { codes[tr] = s.exists ? s.data() : null; if (tr === TR) secCode = codes[tr]; paintAdmin(); });
     });
     db.collection('results').onSnapshot(applyResults);
+    all('exams', s => { Object.keys(exams).forEach(k => delete exams[k]); s.docs.forEach(d => exams[d.id] = d.data()); examsReady = true; freezeOld(); saveMarks(); paintAdmin(); });
+    all('marks', s => { Object.keys(marks).forEach(k => delete marks[k]); s.docs.forEach(d => marks[d.id] = d.data()); marksReady = true; saveMarks(); paintAdmin(); });
+    all('waiting', s => { waits = s.docs.map(d => Object.assign({}, d.data(), {_id: d.id})); paintAdmin(); });
+    all('lockouts', s => { locks = s.docs.map(d => Object.assign({}, d.data(), {_id: d.id})); paintAdmin(); });
     if (typeof startAdmins === 'function') startAdmins();
-  } else db.doc(T.state).onSnapshot(onExam, () => {});
+  } else { db.doc(T.state).onSnapshot(onExam, () => {}); watchLock(); }
   if (!isAdmin) setTimeout(() => { if (!firstState){ firstState = true; resume(); } }, 3000);
 }
 boot();

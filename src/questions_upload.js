@@ -52,17 +52,27 @@ function readQuestions(rows){
   return {qs, answers, errs};
 }
 let qPending = null;
+// questions can't change while an exam is live or while anyone is waiting with the code
+function qLockWhy(){
+  if (eff() === 'live') return 'Locked while the exam is live.';
+  const n = typeof people === 'function' ? people().waiting.length : 0;
+  return n ? 'Locked while ' + n + (n === 1 ? ' person is' : ' people are') + ' waiting.' : '';
+}
 function paintQs(){
-  if (!isAdmin) return;
-  const lc = lvCount();
-  $('qCount').textContent = N ? '· ' + N + ' (Easy ' + lc.e + ', Medium ' + lc.m + ', Hard ' + lc.h + ')' + (key ? '' : ' · no key') : '· none yet';
-  $('qFile').disabled = eff() === 'live';
+  if (!isAdmin || $('sAdmin').hidden) return;
+  const lc = lvCount(), why = qLockWhy(), m = T.qMeta;
+  $('qHead').textContent = N ? N + ' questions' : 'No questions yet';
+  $('qCount').textContent = N ? '· Easy ' + lc.e + ' · Medium ' + lc.m + ' · Hard ' + lc.h + ' · ' + (key && Array.isArray(key.answers) && key.answers.length === N ? 'answer key saved' : 'answer key missing') : '';
+  $('qLockNote').innerHTML = why ? '<span><b>' + esc(why) + '</b> You can change questions again after this exam ends.</span>' : '';
+  $('qLockNote').hidden = !why;
+  $('qPick').disabled = !!why; $('qFile').disabled = !!why; $('qSave').disabled = !!why;
+  $('qChanged').textContent = m && m.at ? 'Last changed ' + fmtD(m.at) + (m.by ? ' by ' + m.by : '') + '.' : '';
 }
 const Q_MAX_BYTES = 5 * 1024 * 1024;   // a 50-question file is a few KB; anything this big is the wrong file
-function qReset(){ $('qTpl').hidden = true; qPending = null; $('qFile').value = ''; $('qFileX').hidden = true; $('qErrBox').hidden = true; $('qOkBox').hidden = true; }
+function qReset(){ $('qTpl').hidden = true; qPending = null; $('qFile').value = ''; $('qFileRow').hidden = true; $('qErrBox').hidden = true; $('qOkBox').hidden = true; }
 $('qFile').onchange = async () => {
   const f = $('qFile').files[0]; $('qErrBox').hidden = true; $('qOkBox').hidden = true; qPending = null;
-  $('qFileX').hidden = !f;
+  $('qFileRow').hidden = !f; $('qFileName').textContent = f ? f.name : '';
   if (!f) return;
   if (!f.size){ $('qErrT').textContent = 'This file is empty. Choose the Excel file that has your questions.'; $('qErrs').innerHTML = ''; $('qTpl').hidden = true; $('qErrBox').hidden = false; return; }
   if (f.size > Q_MAX_BYTES){ $('qErrT').textContent = 'This file is too big (' + (f.size / 1048576).toFixed(1) + ' MB). A questions file should be well under 5 MB. Check you picked the right file.'; $('qErrs').innerHTML = ''; $('qTpl').hidden = true; $('qErrBox').hidden = false; return; }
@@ -86,17 +96,18 @@ $('qFile').onchange = async () => {
   }
   qPending = r;
   const c = l => r.qs.filter(q => q.l === l).length;
-  const old = results.filter(x => (x.track || 'pharmacist') === TR).length;
-  $('qOkT').textContent = f.name + ': ' + r.qs.length + ' questions (Easy ' + c('Easy') + ', Medium ' + c('Medium') + ', Hard ' + c('Hard') + '), each with a correct answer. Saving replaces the current ' + (N || 'no') + ' questions.'
-    + (old ? ' ' + old + ' saved result' + (old > 1 ? 's' : '') + ' will be re-marked with these new answers. If this is a completely new set of questions, clear the old results first.' : '');
+  $('qOkT').textContent = f.name + ': ' + r.qs.length + ' questions (Easy ' + c('Easy') + ', Medium ' + c('Medium') + ', Hard ' + c('Hard') + '), each with a correct answer. Saving replaces the current ' + (N || 'no') + ' questions for the next exam. Marks of past exams don\'t change.';
   $('qOkBox').hidden = false; $('qSave').focus();
 };
 $('qCancel').onclick = qReset;
 // take the chosen file off the form: nothing is saved, the current questions stay as they are
-$('qFileX').onclick = () => { const had = !!qPending; qReset(); msg(had ? 'File removed. Nothing was saved; the current questions are unchanged.' : 'File removed.'); $('qFile').focus(); };
+$('qFileX').onclick = () => { const had = !!qPending; qReset(); msg(had ? 'File removed. Nothing was saved; the current questions are unchanged.' : 'File removed.'); $('qPick').focus(); };
 // saves the whole question list and its correct answers (same order) for this assessment
 async function saveSet(qs, answers){
-  await db.doc('questions/' + TR).set({qs, updatedAt: Date.now()});
+  const why = qLockWhy(); if (why) throw new Error(why + ' Questions can be changed after this exam ends');
+  const meta = {at: Date.now(), by: (typeof myEmail === 'string' && myEmail) || ''};
+  await db.doc('questions/' + TR).set({qs, updatedAt: meta.at, updatedBy: meta.by});
+  T.qMeta = meta;
   await db.doc(T.key).set({answers});
   key = keys[TR] = {answers}; setQs(TR, qs); paintAdmin(); paintQs(); qRepaint();
   if (exam.status === 'open') await db.doc(T.state).set(Object.assign({}, exam, {count: qs.length}));   // staff see the count while waiting
@@ -104,7 +115,7 @@ async function saveSet(qs, answers){
 $('qSave').onclick = async () => {
   // the file must still be chosen and unchanged since it was checked
   if (!qPending || !$('qFile').files.length){ qReset(); msg('Choose the Excel file again, then press Save questions.'); return; }
-  if (eff() === 'live'){ $('qErrT').textContent = 'End the exam before changing its questions.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; return; }
+  if (qLockWhy()){ $('qErrT').textContent = qLockWhy() + ' You can change questions again after this exam ends.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; return; }
   const b = $('qSave'), r = qPending; b.disabled = true; b.textContent = 'Saving…';
   try {
     await saveSet(r.qs, r.answers); qReset();
@@ -129,7 +140,7 @@ $('qTpl').onclick = () => qDownload('questions_template.xlsx', [Q_COLS,
 // invigilators can add, edit and delete questions here (not while an exam is running)
 let qLvF = '', qOpen = false, qEditing = null, qDelAsk = -1, qBusy = false;   // qEditing: index being edited, 'new', or null
 const Q_MAX_Q = 1000, Q_MAX_O = 300;
-const qLocked = () => eff() === 'live';
+const qLocked = () => !!qLockWhy();
 function qForm(q, ans){
   const opts = Q_LETTERS.split('').map((L, j) => '<div class="qopt"><b>' + L + '</b><input class="input" data-o="' + j + '" maxlength="' + Q_MAX_O + '" value="' + esc(q.o[j] || '') + '" placeholder="' + (j < 2 ? 'Choice ' + L + ' (needed)' : 'Choice ' + L + ' (optional)') + '" aria-label="Choice ' + L + '">'
     + '<label class="qok"><input type="radio" name="qAns" value="' + j + '"' + (ans === j ? ' checked' : '') + '> Correct</label></div>').join('');
@@ -145,13 +156,13 @@ function paintQList(){
   if (lock) qEditing = null;
   const shown = QS.map((q, i) => ({q, i})).filter(({q, i}) => i === qEditing || ((!qLvF || q.l === qLvF) && (!s || (q.q + ' ' + q.o.join(' ')).toLowerCase().includes(s))));
   $('qDlgT').textContent = 'Questions · ' + T.name;
-  $('qLock').hidden = !lock; $('qAdd').disabled = lock || qEditing !== null;
+  $('qLock').hidden = !lock; $('qLock').textContent = lock ? qLockWhy() + ' You can change questions again after this exam ends.' : ''; $('qAdd').disabled = lock || qEditing !== null;
   $('qListNote').textContent = !N ? 'No questions yet. Press Add question, or upload an Excel file on the dashboard.' : 'Showing ' + shown.length + ' of ' + N + ' questions.' + (k ? '' : ' The correct answers are not saved, so none are marked.');
   const card = ({q, i}) => i === qEditing ? qForm(q, k ? k[i] : -1)
     : '<li><div class="qh"><span class="qn">' + (i + 1) + '.</span><span class="qt">' + esc(q.q) + '</span><span class="lv">' + esc(q.l) + '</span>'
       + (lock || qEditing !== null ? '' : '<span class="qact"><button class="btn btn-sm btn-ghost" type="button" data-edit="' + i + '">Edit</button><button class="btn btn-sm btn-quiet" type="button" data-del="' + i + '">Delete</button></span>') + '</div><ul>'
       + q.o.map((o, j) => '<li' + (k && k[i] === j ? ' class="ok"' : '') + '><b>' + Q_LETTERS[j] + '</b><span>' + esc(o) + '</span></li>').join('') + '</ul>'
-      + (qDelAsk === i ? '<div class="qconf"><span>Delete question ' + (i + 1) + '?' + (qHasResults() ? ' Saved results will be marked against the changed list.' : '') + '</span><button class="btn btn-sm btn-danger" type="button" data-del-yes="' + i + '">Delete</button><button class="btn btn-sm btn-ghost" type="button" data-del-no>Keep it</button></div>' : '') + '</li>';
+      + (qDelAsk === i ? '<div class="qconf"><span>Delete question ' + (i + 1) + '? Past marks don\'t change.</span><button class="btn btn-sm btn-danger" type="button" data-del-yes="' + i + '">Delete</button><button class="btn btn-sm btn-ghost" type="button" data-del-no>Keep it</button></div>' : '') + '</li>';
   $('qItems').innerHTML = (qEditing === 'new' ? qForm({l: 'Easy', q: '', o: []}, -1) : '') + shown.map(card).join('');
 }
 // repaint from outside the editor (data updates) without wiping a form someone is typing in
@@ -173,7 +184,7 @@ function qReadForm(){
   return {q: {l, q: text, o}, ans};
 }
 async function qCommit(qs, answers, done){
-  if (qLocked()){ qSay('', 'An exam is running, so questions can\'t be changed until it ends.'); return false; }
+  if (qLocked()){ qSay('', qLockWhy() + ' You can change questions again after this exam ends.'); return false; }
   qBusy = true; document.querySelectorAll('#qDlg button').forEach(b => b.disabled = true);
   try { await saveSet(qs, answers); qSay(done); return true; }
   catch(e){ qSay('', 'Could not save: ' + errText(e) + '. Nothing was changed; try again.'); return false; }
@@ -203,6 +214,7 @@ $('qItems').addEventListener('click', async ev => {
 $('qAdd').onclick = () => { if (qLocked()) return; qSay(); qDelAsk = -1; qEditing = 'new'; paintQList(); $('qfQ').focus(); };
 function qOpenDlg(){ qOpen = true; qEditing = null; qDelAsk = -1; qSay(); paintQList(); document.body.classList.add('dlg-open'); $('qDlg').showModal(); $('qSearch').focus(); }
 $('qView').onclick = qOpenDlg;
+$('qPick').onclick = () => { if (!qLockWhy()) $('qFile').click(); };
 $('qClose').onclick = () => $('qDlg').close();
 $('qDlg').addEventListener('cancel', ev => { if (qEditing !== null){ ev.preventDefault(); qEditing = null; qSay(); paintQList(); } });   // Esc first leaves the form
 $('qDlg').addEventListener('close', () => { qOpen = false; qEditing = null; document.body.classList.remove('dlg-open'); $('qView').focus(); });

@@ -78,6 +78,9 @@
         <p class="help" id="fPhoneHelp">The invigilator uses this to match your marks.</p>
         <p class="fwarn" id="fPhoneWarn" role="status" hidden><span>Only numbers (0–9) can be typed here. Letters and symbols are left out.</span><button class="fwarn-x" id="fPhoneWarnX" type="button" aria-label="Close this message">×</button></p>
         <p class="ferr" id="fPhoneErr" hidden></p></div>
+      <div class="field"><label for="fClinic">Clinic</label>
+        <input class="input" id="fClinic" type="text" maxlength="60" autocomplete="off" aria-describedby="fClinicErr" placeholder="e.g. Edappal">
+        <p class="ferr" id="fClinicErr" hidden></p></div>
       <div class="field"><label for="fPos">Position</label>
         <select class="input" id="fPos" aria-describedby="fPosErr"></select>
         <p class="ferr" id="fPosErr" hidden></p></div>
@@ -195,83 +198,114 @@
 
 <!-- INVIGILATOR -->
 <section id="sAdmin" hidden>
-  <div class="admin-head">
-    <div class="stack s8"><button class="btn btn-quiet btn-sm back" id="aHome" type="button">All assessments</button><h1 id="aTitle">Assessment</h1></div>
+  <button class="btn btn-quiet btn-sm back" id="aHome" type="button">All assessments</button>
+  <div class="head">
+    <h1 id="aTitle">Assessment</h1>
     <div class="row"><button class="btn btn-ghost" id="aTry" type="button">Preview the test</button><span id="aChip" class="chip idle"><i class="dot"></i><span></span></span></div>
   </div>
-  <div class="notice warn" id="aNoQs" role="status" hidden>This assessment has no questions yet. Add questions below before starting an exam.</div>
-  <div class="notice bad" id="aKeyWarn" role="alert" hidden>The correct answers are missing, so marks can't be shown. Add the questions again below and marks will appear.</div>
-  <div class="grid2">
-    <div class="card stack">
-      <span class="eyebrow">Run the exam</span>
-      <div>
-        <div class="bigclock" id="aBig">–</div>
-        <p class="muted" id="aTimes"></p>
-      </div>
-      <div class="stack" id="aIdle">
-        <div class="field" style="max-width:220px"><label for="aMins">How long the exam stays open (minutes)</label><input class="input" id="aMins" type="number" min="5" max="180" value="35" inputmode="numeric"></div>
-        <p class="help" id="aNeed"></p>
-        <p class="notice warn" id="aMinsWarn" hidden></p>
-        <div><button class="btn btn-lg" id="aStart">Start exam</button></div>
-      </div>
-      <div class="stack" id="aLiveRow" hidden>
-        <div class="codebox stack s8">
-          <span class="eyebrow">Security code</span>
-          <div class="row"><b class="seccode" id="aCode">------</b><button class="btn btn-sm btn-ghost" id="aCodeCopy" type="button">Copy code</button><button class="btn btn-sm btn-quiet" id="aCodeNew" type="button">Make a new code</button></div>
-          <p class="help">Give this code to staff: read it out or send it on WhatsApp. They type it after their details. If you make a new code, the old one stops working, but anyone already answering carries on.</p>
-        </div>
-        <div id="aEndWrap"><button class="btn btn-danger" id="aEnd">End exam now</button></div>
-        <div class="notice bad stack s8" id="aEndBox" hidden>
-          <span id="aEndText"></span>
-          <div class="row"><button class="btn btn-danger" id="aEndYes">End exam now</button><button class="btn btn-ghost" id="aEndNo">Don't end it</button></div>
+  <div class="notice warn" id="aNoQs" role="status" hidden></div>
+
+  <section class="stats" id="aStats" aria-label="Right now">
+    <div class="stat t-brand"><span class="sl">Waiting to start</span><b id="sWait">0</b><span class="su">entered the code</span></div>
+    <div class="stat"><span class="sl">Started</span><b id="sStart">0</b><span class="su" id="sStartU">of 0 waiting</span></div>
+    <div class="stat"><span class="sl">In progress</span><b id="sProg">0</b><span class="su">answering now</span></div>
+    <div class="stat t-green"><span class="sl">Submitted</span><b id="sSub">0</b><span class="su">finished</span></div>
+    <div class="stat"><span class="sl">Average</span><b id="sAvg">–</b><span class="su" id="sAvgU">out of 50</span></div>
+  </section>
+
+  <div class="agrid">
+    <section class="card stack" aria-labelledby="runT">
+      <div><span class="eyebrow">Run the exam</span><h2 id="runT">Three steps, in this order</h2></div>
+
+      <div class="step">
+        <span class="stepno">1</span>
+        <div class="stack s8 grow">
+          <h3>Share the exam link</h3>
+          <div class="row"><input class="input" id="aLink" type="text" readonly value="" aria-label="Exam link"><button class="btn btn-ghost" id="aCopy" type="button">Copy link</button><a class="btn btn-ghost" id="aWa" href="https://wa.me/" target="_blank" rel="noopener">Share on WhatsApp</a></div>
         </div>
       </div>
-      <div class="stack s8" id="aShare"><span class="eyebrow" id="aShareT">Exam link</span><div class="row"><input class="input" id="aLink" type="text" readonly value="" aria-label="Exam link" style="flex:1;min-width:220px"><button class="btn" id="aCopy" type="button">Copy link</button><a class="btn btn-ghost" id="aWa" href="https://wa.me/" target="_blank" rel="noopener">Share on WhatsApp</a></div><p class="help">Staff open this link at exam time and type the security code after their details.</p></div>
+
+      <div class="step">
+        <span class="stepno">2</span>
+        <div class="stack s8 grow">
+          <h3>Share the security code</h3>
+          <div class="row"><b class="seccode" id="aCode">------</b><button class="btn btn-ghost" id="aCodeCopy" type="button">Copy code</button><button class="btn btn-quiet" id="aCodeNew" type="button">Make a new code</button></div>
+          <p class="help" id="aCodeMeta"></p>
+          <div class="notice warn stack s8" id="aCodeBox" hidden role="alertdialog" aria-labelledby="aCodeQ">
+            <span id="aCodeQ"></span>
+            <div class="row"><button class="btn btn-ghost" type="button" id="aCodeYes">Make new code</button><button class="btn btn-ghost" type="button" id="aCodeNo">Keep this code</button></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <span class="stepno">3</span>
+        <div class="stack s8 grow" id="aIdle">
+          <h3>Start the exam</h3>
+          <div class="field" style="max-width:320px"><label for="aMins">Exam stays open after you press Start (minutes)</label>
+            <div class="row"><input class="input" id="aMins" type="number" min="5" max="180" value="35" inputmode="numeric" aria-describedby="aNeed aMinsErr" style="max-width:110px;min-width:0"><span class="muted">minutes</span></div>
+            <p class="ferr" id="aMinsErr" hidden></p></div>
+          <p class="help" id="aNeed"></p>
+          <p class="notice warn" id="aMinsWarn" hidden></p>
+          <div><button class="btn btn-lg" id="aStart" type="button">Start exam</button></div>
+        </div>
+        <div class="stack s8 grow" id="aLiveRow" hidden>
+          <h3>Exam is running</h3>
+          <div class="bigclock" id="aBig">–</div>
+          <p class="muted" id="aTimes"></p>
+          <div id="aEndWrap"><button class="btn btn-danger" id="aEnd" type="button">End exam now</button></div>
+          <div class="notice bad stack s8" id="aEndBox" hidden>
+            <span id="aEndText"></span>
+            <div class="row"><button class="btn btn-danger" id="aEndYes" type="button">End exam now</button><button class="btn btn-ghost" id="aEndNo" type="button">Don't end it</button></div>
+          </div>
+        </div>
+      </div>
       <p class="err" id="aErr" role="alert"></p>
-    </div>
-    <div class="card stack">
-      <span class="eyebrow">Right now</span>
-      <div class="stats" id="aStats"></div>
-      <p class="help" id="aKeyNote"></p>
-    </div>
+    </section>
+
+    <section class="card stack" aria-labelledby="waitT">
+      <div class="row between"><div><span class="eyebrow">Who's in</span><h2 id="waitT">Waiting to start · 0</h2></div><span class="help"><i class="live"></i>Live</span></div>
+      <ul class="people" id="aPeople"></ul>
+      <p class="help" id="aLocks"></p>
+    </section>
   </div>
-  <div class="card stack" style="margin-top:16px" id="qCard">
+
+  <section class="card stack" id="qCard" aria-labelledby="qT">
     <div class="row between">
-      <h2>Questions <span class="muted small" id="qCount"></span></h2>
-      <div class="row"><button class="btn btn-sm" id="qView" type="button" aria-haspopup="dialog">View and edit questions</button></div>
+      <div><span class="eyebrow">Questions</span><h2 id="qT"><span id="qHead">No questions yet</span> <span class="muted small" id="qCount"></span></h2></div>
+      <div class="row"><button class="btn btn-ghost" id="qView" type="button" aria-haspopup="dialog">View questions</button><button class="btn btn-ghost" id="qPick" type="button">Choose Excel file</button><input id="qFile" type="file" accept=".xlsx,.xls,.csv" aria-label="Questions file" class="sr-only" tabindex="-1"></div>
     </div>
-    <p class="help">To add or change questions, choose an Excel file below. Put one question per row with the columns level, question, option_a to option_d and answer (the letter of the correct choice). This replaces all current questions. You can't change questions while an exam is running.</p>
-    <div class="row"><input class="input" id="qFile" type="file" accept=".xlsx,.xls,.csv" aria-label="Questions file" style="flex:1;min-width:220px"><button class="btn btn-ghost" id="qFileX" type="button" hidden>Remove file</button></div>
+    <p class="notice info" id="qLockNote" role="status" hidden></p>
+    <div class="row" id="qFileRow" hidden><span class="small" id="qFileName"></span><button class="btn btn-sm btn-quiet" id="qFileX" type="button">Remove file</button></div>
     <div class="notice bad stack s8" id="qErrBox" role="alert" hidden><b id="qErrT"></b><ul class="qerr" id="qErrs"></ul><div><button class="btn btn-sm btn-ghost" id="qTpl" type="button" hidden>Download template</button></div></div>
     <div class="notice info stack s8" id="qOkBox" role="status" hidden>
       <span id="qOkT"></span>
-      <div class="row"><button class="btn" id="qSave" type="button">Save questions</button><button class="btn btn-ghost" id="qCancel" type="button">Cancel</button></div>
+      <div class="row"><button class="btn btn-ghost" id="qSave" type="button">Save questions</button><button class="btn btn-quiet" id="qCancel" type="button">Cancel</button></div>
     </div>
-  </div>
-  <div class="card stack" style="margin-top:16px">
+    <p class="help">Excel columns: level, question, option_a to option_d, answer letter. Uploading replaces the questions for the <b>next</b> exam only. Each exam keeps its own copy of the questions and answer key, so past marks never change. <span id="qChanged"></span></p>
+  </section>
+
+  <section class="card stack" aria-labelledby="mT">
     <div class="row between">
-      <h2>Mark list <span class="muted small" id="aCount"></span></h2>
-      <div class="row"><div class="dl" role="group" aria-label="Download mark list"><span class="dl-l">Download</span><button class="btn btn-sm btn-ghost" data-dl="csv">CSV</button><button class="btn btn-sm btn-ghost" data-dl="xlsx">Excel</button><button class="btn btn-sm btn-ghost" data-dl="pdf">PDF</button></div><button class="btn btn-sm btn-ghost" id="aRefresh" type="button">Refresh</button><button class="btn btn-sm btn-quiet" id="aClear">Clear these results</button></div>
-    </div>
-    <div class="row">
-      <div class="field examsel"><label for="aExamSel">Show results for</label><select class="input" id="aExamSel"></select></div>
-      <span class="muted small" id="aUpdated" style="align-self:flex-end;padding-bottom:12px"></span>
-    </div>
-    <p class="notice info" id="aOldNote" hidden>You're looking at an older exam. Its marks are worked out with the current questions and answers, so they can differ from the marks given at the time if the questions have changed since.</p>
-    <div class="notice bad stack s8" id="aClearBox" role="alertdialog" aria-labelledby="aClearText" hidden>
-      <span id="aClearText"></span>
-      <div class="row"><button class="btn btn-danger" id="aClearYes">Delete these results</button><button class="btn btn-ghost" id="aClearNo">Cancel</button></div>
-    </div>
-    <div class="row filters">
-      <div class="field grow"><label class="sr-only" for="aSearch">Search name or phone</label><input class="input" id="aSearch" type="search" placeholder="Search name or phone" autocomplete="off"></div>
-      <div class="seg" role="group" aria-label="Filter by status">
-        <button type="button" data-f="all" aria-pressed="true">All <span id="cAll">0</span></button>
-        <button type="button" data-f="run" aria-pressed="false">In progress <span id="cRun">0</span></button>
-        <button type="button" data-f="sub" aria-pressed="false">Submitted <span id="cSub">0</span></button>
+      <div><h2 id="mT">Mark list</h2><p class="help" id="mSub"></p></div>
+      <div class="row">
+        <div class="dl" role="group" aria-label="Download mark list"><span class="dl-l">Download</span><button class="btn btn-sm btn-ghost" data-dl="csv" type="button">CSV</button><button class="btn btn-sm btn-ghost" data-dl="xlsx" type="button">Excel</button><button class="btn btn-sm btn-ghost" data-dl="pdf" type="button">PDF</button></div>
+        <div class="more"><button class="btn btn-sm btn-quiet" type="button" id="aMore" aria-expanded="false" aria-controls="aMenu">More</button>
+          <div class="menu" id="aMenu" hidden><button type="button" id="aClear">Delete results of this exam…</button></div></div>
       </div>
     </div>
-    <p class="help legend"><span class="pct hi">70%+</span> <span class="pct mid">50–69%</span> <span class="pct lo">Under 50%</span> Only each person's first try counts. "Left the page" is how many times they switched to another app or locked their phone during the test.</p>
-    <div class="tw"><table><thead><tr><th>Rank &amp; name</th><th>Phone</th><th>Position</th><th class="num" id="thS">Score /50</th><th class="num">%</th><th class="num" id="thE">Easy /35</th><th class="num" id="thM">Medium /10</th><th class="num" id="thH">Hard /5</th><th class="num">Left the page</th><th>Status</th></tr></thead><tbody id="aBody"></tbody></table></div>
-  </div>
+    <div class="notice bad stack s8" id="aClearBox" hidden role="alertdialog" aria-labelledby="aClearText">
+      <span id="aClearText"></span>
+      <div class="row"><button class="btn btn-danger" type="button" id="aClearYes">Delete results</button><button class="btn btn-ghost" type="button" id="aClearNo">Keep results</button></div>
+    </div>
+    <div class="row filters">
+      <div class="field examsel"><label for="aExamSel">Show results for</label><select class="input" id="aExamSel"></select></div>
+      <div class="field grow"><label for="aSearch">Search this exam's results</label><input class="input" id="aSearch" type="search" placeholder="Type a name, clinic or phone number" aria-describedby="aRes" autocomplete="off"></div>
+      <div class="seg" role="group" aria-label="Filter by status"><button type="button" data-f="all" aria-pressed="true">All <span id="cAll">0</span></button><button type="button" data-f="run" aria-pressed="false">In progress <span id="cRun">0</span></button><button type="button" data-f="sub" aria-pressed="false">Submitted <span id="cSub">0</span></button></div>
+    </div>
+    <div class="resline" id="aRes" role="status" aria-live="polite"></div>
+    <p class="help legend"><span class="pct hi">70%+</span><span class="pct mid">50–69%</span><span class="pct lo">Under 50%</span> Only each person's first try counts. "Left the page" counts switches to another app or a locked phone.</p>
+    <div class="tw"><table><thead><tr><th>Rank &amp; name</th><th>Clinic</th><th>Phone</th><th class="num" id="thS">Score /50</th><th class="num">%</th><th class="num" id="thE">Easy /35</th><th class="num" id="thM">Medium /10</th><th class="num" id="thH">Hard /5</th><th class="num">Left the page</th><th>Status</th></tr></thead><tbody id="aBody"></tbody></table></div>
+  </section>
 </section>
 </main>

@@ -178,7 +178,7 @@ td.num,th.num{text-align:right}
 /* invigilator sign-in gate */
 .gate{position:fixed;inset:0;z-index:50;overflow:auto;background:var(--surface-1);padding:48px 16px}
 .gate .col{margin:0 auto}
-.signout{margin-left:12px;background:none;border:0;padding:0;color:inherit;font:inherit;font-size:12px;font-weight:700;text-decoration:underline;cursor:pointer}
+.signout{margin-left:12px;background:none;border:0;padding:0;color:inherit;font:inherit;font-size:14px;min-height:32px;font-weight:700;text-decoration:underline;cursor:pointer}
 .qerr{margin:0;padding-left:18px;font-size:13px}
 .qlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .qlist>li{border:1px solid var(--sc-border);border-radius:var(--r-sm);padding:14px 16px;background:var(--surface-1)}
@@ -282,7 +282,7 @@ body.dlg-open{overflow:hidden}
   #aBody td:nth-child(1) .rk{margin-right:4px}
   #aBody td:nth-child(2),#aBody td:nth-child(3){grid-column:span 2}
   #aBody td:nth-child(10){grid-column:span 2;align-items:flex-start}
-  #aBody td:nth-child(2)::before{content:"Phone"} #aBody td:nth-child(3)::before{content:"Position"}
+  #aBody td:nth-child(2)::before{content:"Clinic"} #aBody td:nth-child(3)::before{content:"Phone"}
   #aBody td:nth-child(4)::before{content:"Score"} #aBody td:nth-child(5)::before{content:"%"}
   #aBody td:nth-child(6)::before{content:"Easy"} #aBody td:nth-child(7)::before{content:"Medium"}
   #aBody td:nth-child(8)::before{content:"Hard"} #aBody td:nth-child(9)::before{content:"Left page"}
@@ -314,3 +314,65 @@ body.dlg-open{overflow:hidden}
 .fwarn-x{flex:none;width:28px;height:28px;border:0;border-radius:50%;background:none;color:inherit;font-size:20px;line-height:1;cursor:pointer}
 .fwarn-x:hover{background:var(--st-pending-bg)}
 .fwarn-x:focus-visible{outline:2px solid var(--brand-fg)}
+
+/* ---------- invigilator screen (redesign) ----------
+   Depth from soft shadows, raised stat tiles and inset step panels. The light purple gradients are an
+   approved exception to the no-gradient rule, for this screen only (body.inv). */
+#sAdmin .head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:8px 0 16px}
+#sAdmin .back{align-self:flex-start}
+#sAdmin>.notice{margin-bottom:16px}
+#sAdmin h3{font-size:16px;font-weight:800;margin:0;letter-spacing:-.01em}
+#sAdmin .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:16px}
+@media (max-width:820px){#sAdmin .stats{grid-template-columns:repeat(2,1fr)} #sAdmin .stats .stat:first-child{grid-column:1/-1}}
+#sAdmin .stats .stat{border:1px solid var(--sc-border);border-top:3px solid var(--sc-border-strong);box-shadow:var(--sh-2);background:linear-gradient(180deg,var(--card-wash) 0%,var(--surface-2) 70%)}
+#sAdmin .stats .stat.t-brand{border-top-color:var(--sc-purple);background:linear-gradient(180deg,var(--tint-brand-lift,var(--tint-brand)) 0%,var(--surface-2) 75%)}
+#sAdmin .stats .stat.t-brand b{color:var(--brand-fg)}
+#sAdmin .stats .stat.t-green{border-top-color:var(--st-approved-dot);background:linear-gradient(180deg,var(--tint-green) 0%,var(--surface-2) 75%)}
+.agrid{display:grid;grid-template-columns:1.45fr 1fr;gap:16px;margin-bottom:16px;align-items:start}
+@media (max-width:900px){.agrid{grid-template-columns:1fr}}
+#sAdmin>.card{margin-bottom:16px}
+#sAdmin .card{box-shadow:var(--sh-2);background:linear-gradient(180deg,var(--card-wash) 0px,var(--surface-2) 140px)}
+#sAdmin .step{display:flex;gap:14px;align-items:flex-start;padding:16px;border:1px solid var(--sc-border);border-radius:var(--r-md);background:linear-gradient(135deg,var(--surface-1) 0%,var(--card-wash) 100%);box-shadow:inset 0 1px 2px rgba(26,14,80,.03)}
+#sAdmin .stepno{flex:none;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--surface-2);color:var(--brand-fg);font-weight:800;border:1px solid var(--edge-brand);box-shadow:var(--sh-1)}
+#sAdmin .step .input{background:var(--surface-2)}
+#sAdmin .step #aLink{flex:1;min-width:200px}
+#sAdmin .seccode{display:inline-block;background:var(--surface-2);border:1px dashed var(--edge-brand);border-radius:var(--r-sm);padding:6px 12px 6px 16px;box-shadow:var(--sh-1)}
+#sAdmin .bigclock{font-size:clamp(32px,6vw,44px)}
+.people{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;max-height:420px;overflow:auto;border:1px solid var(--sc-border);border-radius:var(--r-md);background:var(--surface-2);box-shadow:var(--sh-1)}
+.people li{display:flex;justify-content:space-between;gap:10px;padding:10px 14px;font-size:14px;border-top:1px solid var(--sc-border)}
+.people li:first-child{border-top:0}
+.people li:nth-child(even){background:var(--surface-1)}
+.people li.none{color:var(--sc-muted);justify-content:center;padding:18px 14px}
+.people .t{color:var(--sc-muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.live{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--st-approved-dot);margin-right:6px;animation:pulse 1.4s infinite;vertical-align:middle}
+.link{background:none;border:0;padding:0;color:var(--brand-fg);font:inherit;font-size:14px;font-weight:700;text-decoration:underline;cursor:pointer;min-height:24px}
+.more{position:relative}
+.menu{position:absolute;right:0;top:calc(100% + 4px);background:var(--surface-2);border:1px solid var(--sc-border);border-radius:var(--r-sm);box-shadow:var(--sh-3);z-index:5;min-width:240px;padding:4px}
+.menu button{display:block;width:100%;text-align:left;min-height:44px;padding:0 12px;border:0;background:none;color:var(--sc-danger-fg);font-weight:700;font-size:14px;cursor:pointer;border-radius:6px}
+.menu button:hover,.menu button:focus-visible{background:var(--sc-danger-bg)}
+.resline{font-size:14px;color:var(--sc-ink)}.resline:empty{display:none}
+#sAdmin mark{background:var(--st-pending-bg);color:inherit;border-radius:3px;padding:0 1px}
+#sAdmin .tw,#sAdmin .seg{box-shadow:var(--sh-1);background:var(--surface-2)}
+#sAdmin .seg button[aria-pressed=true]{box-shadow:inset 0 -2px 0 rgba(0,0,0,.12)}
+#sAdmin .btn{transition:background-color .15s,box-shadow .15s,transform .15s}
+#sAdmin .btn-ghost{background:var(--surface-2)}
+#sAdmin .btn:not(.btn-quiet):not(.btn-ghost):not(:disabled){box-shadow:var(--sh-2)}
+#sAdmin .btn:not(:disabled):hover{box-shadow:var(--sh-3)}
+#sAdmin .btn:not(:disabled):active{transform:translateY(1px);box-shadow:var(--sh-1)}
+#sAdmin .notice.stack{box-shadow:var(--sh-2)}
+#sAdmin .card>.notice.info{background:var(--surface-1)}
+#sAdmin .examsel{min-width:280px}
+:root{--wash-top:#ECE8FA;--wash-glow:rgba(74,47,160,.10);--card-wash:#F7F5FE}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){--wash-top:#1E1934;--wash-glow:rgba(124,98,230,.18);--card-wash:#241F38}}
+:root[data-theme="dark"]{--wash-top:#1E1934;--wash-glow:rgba(124,98,230,.18);--card-wash:#241F38}
+body.inv{background:radial-gradient(900px 420px at 85% -60px,var(--wash-glow),transparent 70%),linear-gradient(180deg,var(--wash-top) 0px,var(--surface-0) 520px) no-repeat,var(--surface-0)}
+body.inv .top{box-shadow:var(--sh-2);position:relative;z-index:3}
+body.inv main{max-width:1180px}
+@media (max-width:560px){
+  #sAdmin .step{padding:14px 12px;gap:10px}
+  #sAdmin .seccode{font-size:24px}
+  #sAdmin .examsel{min-width:0;flex:1 1 100%}
+  #sAdmin .dl{width:100%}
+}
+@media (prefers-reduced-motion:reduce){#sAdmin .btn:active{transform:none}}
+#sAdmin .chip{white-space:nowrap}

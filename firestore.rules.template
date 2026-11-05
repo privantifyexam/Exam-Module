@@ -1,6 +1,8 @@
 rules_version = '2';
 // SugarCARE Exam Module. One role: invigilator. An invigilator is an email/password account that is a
 // main account (INVIGILATOR_EMAILS in .env) or is listed as admins/<email> (added on the Invigilators card).
+// Staff sign in anonymously. They may write only their own waiting record, their own lockout and their own
+// results, and never read the answer keys, the security codes, other people's records or the lockout list.
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
@@ -11,6 +13,16 @@ service cloud.firestore {
     function isAdmin() {
       return isMainAccount() || (isPasswordUser() && exists(/databases/$(database)/documents/admins/$(myEmail())));
     }
+    function isTrack(t) { return t in ['pharmacist', 'dietitian']; }
+    // where each assessment keeps its exam state and its plain security code
+    function stateOf(track) { return track == 'pharmacist' ? 'state' : track; }
+    function codeOf(track) { return track == 'pharmacist' ? 'code' : 'dietitian-code'; }
+    function trackOfState(d) { return d == 'state' ? 'pharmacist' : d; }
+    function examLive(track) {
+      let e = get(/databases/$(database)/documents/exam/$(stateOf(track))).data;
+      return e.status == 'live' && request.time.toMillis() < e.endsAt;
+    }
+    function shortText(v, n) { return v is string && v.size() > 0 && v.size() <= n; }
 
     // invigilator list, one document per lower-case email. Invigilators see and manage it; nobody can
     // add or remove themselves, and main accounts (from .env) are not stored here so can't be removed.
@@ -24,24 +36,61 @@ service cloud.firestore {
       allow delete: if isAdmin() && email != myEmail();
       allow update: if false;
     }
-    // exam state (status, times, security code hash): staff read, invigilator writes
-    match /exam/{doc} {
+    // exam state (status, times; no code): staff read, invigilator writes.
+    // An exam can only go live together with its frozen copy of questions and answers (exams/<track>_<id>).
+    match /exam/{d} {
       allow read: if signedIn();
-      allow write: if isAdmin();
+      allow delete: if isAdmin();
+      allow create, update: if isAdmin() && (request.resource.data.status != 'live'
+        || existsAfter(/databases/$(database)/documents/exams/$(trackOfState(d) + '_' + string(request.resource.data.startedAt))));
     }
-    // questions and options (no answers): staff read only while that exam is live, invigilator uploads
-    function examOf(track) { return track == 'pharmacist' ? 'state' : track; }
-    function examLive(track) {
-      let e = get(/databases/$(database)/documents/exam/$(examOf(track))).data;
-      return e.status == 'live' && request.time.toMillis() < e.endsAt;
-    }
+    // question bank (no answers): staff read only while that exam is live; invigilators can't change it then
     match /questions/{track} {
       allow read: if isAdmin() || (signedIn() && examLive(track));
-      allow write: if isAdmin();
+      allow write: if isAdmin() && !examLive(track);
     }
     // answer keys and plain security codes: invigilator only
-    match /key/{doc} {
+    match /key/{d} {
       allow read, write: if isAdmin();
+    }
+    // each exam's frozen questions + answer key, and its saved scores: invigilator only
+    match /exams/{id} {
+      allow read, write: if isAdmin();
+    }
+    match /marks/{id} {
+      allow read, write: if isAdmin();
+    }
+    // waiting list: written by a staff member when they enter the right code. The code is checked here,
+    // on the server, against key/<code doc>, which staff can't read. Locked-out people can't join.
+    match /waiting/{id} {
+      allow read, delete: if isAdmin();
+      // a staff member may read only their own record (the app never needs it, but the SDK checks it after a refused write)
+      allow get: if signedIn() && id.split('_')[0] == request.auth.uid;
+      allow create, update: if signedIn() && validWaiting(id, request.resource.data);
+    }
+    function validWaiting(id, w) {
+      let c = get(/databases/$(database)/documents/key/$(codeOf(w.track))).data;
+      let e = get(/databases/$(database)/documents/exam/$(stateOf(w.track))).data;
+      return isTrack(w.track) && id == request.auth.uid + '_' + w.track
+        && w.keys().hasOnly(['track', 'examId', 'code', 'codeAt', 'name', 'clinic', 'phone', 'position', 'joinedAt'])
+        && w.code == c.code && w.examId == c.examId && w.codeAt == c.madeAt
+        && e.status in ['open', 'live'] && string(e.startedAt) == w.examId
+        && shortText(w.name, 60) && shortText(w.clinic, 60) && w.phone is string && w.phone.matches('[0-9]{10}')
+        && shortText(w.position, 60) && w.joinedAt is int
+        && !exists(/databases/$(database)/documents/lockouts/$(id));
+    }
+    // lockouts after 5 wrong codes: a staff member records their own and may check only their own;
+    // only invigilators see the list and lift a lockout ("Let them try again")
+    match /lockouts/{id} {
+      allow get: if isAdmin() || (signedIn() && id.split('_')[0] == request.auth.uid);
+      allow list, delete: if isAdmin();
+      allow create: if signedIn() && isTrack(request.resource.data.track)
+        && id == request.auth.uid + '_' + request.resource.data.track
+        && request.resource.data.keys().hasOnly(['track', 'examId', 'name', 'clinic', 'phone', 'at'])
+        && request.resource.data.name is string && request.resource.data.name.size() <= 60
+        && request.resource.data.clinic is string && request.resource.data.clinic.size() <= 60
+        && request.resource.data.phone is string && request.resource.data.phone.size() <= 10;
+      allow update: if false;
     }
     // attempts: each person reads and writes their own doc; invigilator reads all and may clear
     match /results/{uid} {

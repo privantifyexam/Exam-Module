@@ -13,11 +13,12 @@
   }
   const snap = p => ({exists: p in store, data: () => JSON.parse(JSON.stringify(store[p])), id: p.split('/').pop()});
   const doc = p => ({
-    get: async () => snap(p), set: async d => { store[p] = d; fire(); }, update: async d => { store[p] = Object.assign({}, store[p], d); fire(); }, delete: async () => { delete store[p]; fire(); },
-    onSnapshot: cb => { const f = () => cb(snap(p)); subs.push(f); setTimeout(f, 50); }
+    get: async () => snap(p), set: async (d, o) => { store[p] = o && o.merge ? Object.assign({}, store[p], d) : d; fire(); }, update: async d => { store[p] = Object.assign({}, store[p], d); fire(); }, delete: async () => { delete store[p]; fire(); },
+    onSnapshot: cb => { const f = () => cb(snap(p)); subs.push(f); setTimeout(f, 50); return () => {}; }
   });
   const list = c => ({docs: Object.keys(store).filter(k => k.startsWith(c + '/')).map(snap)});
-  const db = {doc, collection: c => ({get: async () => list(c), onSnapshot: cb => { const f = () => cb(list(c)); subs.push(f); setTimeout(f, 50); }})};
-  const user = {canEdit: async () => !!window.__admin, id: async () => 'u_me'};
+  const batch = () => { const ops = []; return {set: (r, d) => ops.push(() => r.set(d)), commit: async () => { for (const o of ops) await o(); }}; };
+  const db = {doc, batch, collection: c => ({get: async () => list(c), onSnapshot: cb => { const f = () => cb(list(c)); subs.push(f); setTimeout(f, 50); }})};
+  const user = {canEdit: async () => !!window.__admin, id: async () => 'u_me', email: async () => 'inv@example.com'};
   window.claude = {use: async n => n === 'db' ? db : n === 'user' ? user : n === 'downloads' ? {save: async () => {}} : null};
 })();
