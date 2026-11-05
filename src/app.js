@@ -224,7 +224,7 @@ function paintSave(){
   $('dTick').className = 'bigtick' + (fs === true ? '' : ' wait');
   $('retryBtn').hidden = fs !== false;
   $('doneBtn').disabled = fs === null;
-  $('doneBtn').textContent = preview ? 'Back to dashboard' : fs === false ? 'Leave without saving' : 'Return to sign-in';
+  $('doneBtn').textContent = preview ? 'Back to dashboard' : fs === false ? 'Leave without saving' : 'Finish';
 }
 $('retryBtn').onclick = () => { finalSaved = null; paintSave(); write('submitted'); if (!db) { finalSaved = false; paintSave(); } };
 
@@ -343,8 +343,19 @@ function rowsForExam(id = shownId()){
   return Object.values(byPhone).map(list => Object.assign({extra:list.length-1, sc:scoreOf(list[0])}, list[0]));
 }
 function rank(rows){ return rows.slice().sort((a,b) => ((b.sc?b.sc.t:-1)-(a.sc?a.sc.t:-1)) || ((a.finishedAt||9e15)-(b.finishedAt||9e15))); }
-function msg(t){ $('aMsgT').textContent = t; $('aMsg').hidden = !t; }
+// popup message: problems ("Could not…", "End it…") stay until OK; other messages close after a few seconds
+let msgTimer = null;
+function msg(t){
+  const el = $('aMsg'); clearTimeout(msgTimer);
+  if (!t){ el.classList.remove('show'); msgTimer = setTimeout(() => { el.hidden = true; }, 200); return; }
+  const bad = /^(could not|this exam is running|end the exam|there are no|choose the excel)/i.test(t);
+  $('aMsgT').textContent = t; el.classList.toggle('bad', bad); el.classList.toggle('info', !bad); el.setAttribute('role', bad ? 'alert' : 'status');
+  el.hidden = false; requestAnimationFrame(() => el.classList.add('show'));
+  if (!bad) msgTimer = setTimeout(() => msg(''), Math.min(12000, 4000 + t.length * 40));   // longer messages stay longer
+}
 $('aMsgX').onclick = () => msg('');
+$('aMsg').addEventListener('mouseenter', () => clearTimeout(msgTimer));   // hovering keeps it open to read
+$('aMsg').addEventListener('mouseleave', () => { if (!$('aMsg').classList.contains('bad') && !$('aMsg').hidden) msgTimer = setTimeout(() => msg(''), 3000); });
 
 function paintAdmin(){
   if (!isAdmin || $('sAdmin').hidden) return;

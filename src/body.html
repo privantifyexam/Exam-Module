@@ -34,6 +34,9 @@
   </div>
 </dialog>
 
+<!-- POPUP MESSAGE (invigilator): success closes by itself, errors stay until OK -->
+<div class="notice info toast" id="aMsg" role="status" aria-live="polite" hidden><span id="aMsgT"></span><button class="btn btn-quiet btn-sm" id="aMsgX" type="button">OK</button></div>
+
 <!-- INVIGILATOR SIGN-IN (Firebase email and password; shown only with ?admin) -->
 <div id="adminGate" class="gate" hidden>
   <section class="col">
@@ -109,6 +112,7 @@
       <span class="eyebrow">Before you start</span>
       <h1 id="rHello">Hello</h1>
       <div><span id="rChip" class="chip idle"><i class="dot"></i><span></span></span></div>
+      <p class="notice info" id="rWait" role="status"></p>
     </div>
     <div class="facts">
       <div class="fact"><b id="rN">50</b><span>questions</span></div>
@@ -123,7 +127,6 @@
     </ul>
     <p class="notice warn" id="rLate" role="status" hidden>There isn't enough time left to answer every question. Any you don't reach will count as unanswered.</p>
     <div class="stack s8">
-      <p class="muted center" id="rWait"></p>
     </div>
     <button class="btn btn-quiet" id="backBtn" type="button">Not you? Change details</button>
   </div>
@@ -197,7 +200,6 @@
   </div>
   <div class="notice warn" id="aNoQs" role="status" hidden>This assessment has no questions yet. Add questions below before starting an exam.</div>
   <div class="notice bad" id="aKeyWarn" role="alert" hidden>The correct answers are missing, so marks can't be shown. Add the questions again below and marks will appear.</div>
-  <div class="notice info" id="aMsg" role="status" hidden><span id="aMsgT"></span><button class="btn btn-quiet btn-sm" id="aMsgX" type="button">OK</button></div>
   <div class="grid2">
     <div class="card stack">
       <span class="eyebrow">Run the exam</span>
@@ -251,7 +253,7 @@
       <div class="row"><div class="dl" role="group" aria-label="Download mark list"><span class="dl-l">Download</span><button class="btn btn-sm btn-ghost" data-dl="csv">CSV</button><button class="btn btn-sm btn-ghost" data-dl="xlsx">Excel</button><button class="btn btn-sm btn-ghost" data-dl="pdf">PDF</button></div><button class="btn btn-sm btn-ghost" id="aRefresh" type="button">Refresh</button><button class="btn btn-sm btn-quiet" id="aClear">Clear these results</button></div>
     </div>
     <div class="row">
-      <div class="field"><label for="aExamSel">Show results for</label><select class="input" id="aExamSel" style="min-width:280px"></select></div>
+      <div class="field examsel"><label for="aExamSel">Show results for</label><select class="input" id="aExamSel"></select></div>
       <span class="muted small" id="aUpdated" style="align-self:flex-end;padding-bottom:12px"></span>
     </div>
     <p class="notice info" id="aOldNote" hidden>You're looking at an older exam. Its marks are worked out with the current questions and answers, so they can differ from the marks given at the time if the questions have changed since.</p>
