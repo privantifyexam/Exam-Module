@@ -1,0 +1,50 @@
+# Publishes the exam page to Firebase Hosting on every push to main.
+# Needs these secrets in the GitHub environment "FIREBASE_API_KEY" (Settings → Environments):
+#   FIREBASE_SERVICE_ACCOUNT  - JSON key of a Google Cloud service account with the "Firebase Hosting Admin" role
+#   FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_PROJECT_ID, FIREBASE_STORAGE_BUCKET,
+#   FIREBASE_MESSAGING_SENDER_ID, FIREBASE_APP_ID, INVIGILATOR_EMAILS - same values as in .env
+# Firestore rules are not published here; publish firestore.rules from the Firebase console or the CLI.
+name: Publish to Firebase Hosting
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # also lets you run it by hand from the Actions tab
+
+concurrency:
+  group: firebase-hosting
+  cancel-in-progress: false   # never cut a publish off half way
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # the secrets are stored in this GitHub environment (Settings → Environments)
+    environment: FIREBASE_API_KEY
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the page
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_AUTH_DOMAIN: ${{ secrets.FIREBASE_AUTH_DOMAIN }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_STORAGE_BUCKET: ${{ secrets.FIREBASE_STORAGE_BUCKET }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.FIREBASE_MESSAGING_SENDER_ID }}
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          INVIGILATOR_EMAILS: ${{ secrets.INVIGILATOR_EMAILS }}
+        run: python3 build.py
+
+      - name: Check the page script
+        run: node -e 'const s=require("fs").readFileSync("dist/index.html","utf8");[...s.matchAll(/<script>([\s\S]*?)<\/script>/g)].forEach(x=>new Function(x[1]));console.log("page script OK")'
+
+      - name: Publish to Firebase Hosting
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+          channelId: live

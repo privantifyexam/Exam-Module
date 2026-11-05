@@ -12,7 +12,7 @@ if (ROOT / '.env').exists():
             k, v = line.split('=', 1); env[k.strip()] = v.strip().strip('"\'')
 env.update({k: v for k, v in os.environ.items() if k in ENV_KEYS})
 missing = [k for k in ENV_KEYS if not env.get(k)]
-if missing: sys.exit('Missing in .env: ' + ', '.join(missing) + '. Copy .env.example to .env and fill it in.')
+if missing: sys.exit('Missing settings: ' + ', '.join(missing) + '. Locally: copy .env.example to .env and fill it in. On GitHub: add them as repository secrets.')
 fb_cfg = json.dumps({'apiKey': env['FIREBASE_API_KEY'], 'authDomain': env['FIREBASE_AUTH_DOMAIN'], 'projectId': env['FIREBASE_PROJECT_ID'],
                      'storageBucket': env['FIREBASE_STORAGE_BUCKET'], 'messagingSenderId': env['FIREBASE_MESSAGING_SENDER_ID'], 'appId': env['FIREBASE_APP_ID']})
 emails = [e.strip().lower() for e in env['INVIGILATOR_EMAILS'].split(',') if e.strip()]
