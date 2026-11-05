@@ -5,10 +5,11 @@ const SEC = 33, CIRC = 2 * Math.PI * 27;
    the hosting server's clock (HTTP Date header, re-measured every 10 minutes and when the connection returns).
    Local testing only: ?skew=<ms> on localhost pretends this device's clock is off by that much. */
 const SKEW = /^(localhost|127\.0\.0\.\d+)$/.test(location.hostname) ? (Number(new URLSearchParams(location.search).get('skew')) || 0) : 0;
-let clockOff = 0, clockOk = false;
+let clockOff = 0, clockOk = false, clockPrecise = false;
 const deviceNow = () => Date.now() + SKEW;
 const now = () => deviceNow() + clockOff;
 async function syncClock(){
+  if (clockPrecise) return;   // a to-the-millisecond offset from the join record beats the 1-second Date header
   try {
     const t0 = deviceNow(), r = await fetch(location.pathname + '?clock=' + t0, {method: 'HEAD', cache: 'no-store'}), t1 = deviceNow();
     const d = Date.parse(r.headers.get('Date') || '');
@@ -81,10 +82,14 @@ const TICK = '<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><polyline
 const show = id => { ['sLogin','sCode','sReady','sQuiz','sDone','sHome','sAdmin'].forEach(s => $(s).hidden = s !== id); try { window.scrollTo(0, 0); } catch(e){} };
 const lsGet = () => { try { return JSON.parse(localStorage.getItem(LS)); } catch(e){ return null; } };
 const lsSet = v => { try { v ? localStorage.setItem(LS, JSON.stringify(v)) : localStorage.removeItem(LS); } catch(e){} };
+const lsSave = v => { if (v === sess) lsSet(v); };   // saves a session only while it is still this page's session
 // exam stages: idle → open (created with its security code; staff can join and wait) → live (answering) → ended
 const canJoin = s => s === 'open' || s === 'live';
 // the exam whose marks the dashboard shows: while the next exam waits to start, keep showing the last one's
 const marksId = st => st.status === 'open' ? (st.lastId || '') : st.startedAt ? String(st.startedAt) : '';
+// the 10-second countdown after Start: the exam is live but questions open only at startsAt (server time)
+const START_DELAY = 10000;
+const inCountdown = () => exam.status === 'live' && !!exam.startsAt && now() < exam.startsAt;
 const eff = () => exam.status === 'live' ? (now() < exam.endsAt ? 'live' : 'ended') : exam.status;
 const mmss = ms => { ms = Math.max(0, Math.round(ms/1000)); return Math.floor(ms/60) + ':' + String(ms%60).padStart(2,'0'); };
 const fmtT = t => t ? new Date(t).toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}) : '–';
@@ -99,8 +104,11 @@ function chip(el, st, text){ el.className = 'chip ' + st; el.lastElementChild.te
 function statusChip(el){
   const s = eff();
   if (!db) return chip(el, 'idle', booted ? 'Not connected' : 'Connecting…');
-  if (s === 'live') chip(el, 'live', 'Exam is live');
+  // the 10-second countdown: same colours as live, but the dot pulses only once the exam is really live
+  if (s === 'live' && inCountdown()) chip(el, 'run', 'Starting in ' + Math.min(10, Math.max(1, Math.ceil((exam.startsAt - now()) / 1000))) + ' s');
+  else if (s === 'live') chip(el, 'live', 'Exam is live');
   else if (s === 'ended') chip(el, 'ended', 'Exam has ended');
+  else if (exam.hold) chip(el, 'ended', 'Exam cancelled');
   else if (s === 'open') chip(el, 'idle', 'Waiting for the exam to start');
   else chip(el, 'idle', 'Waiting for the invigilator');
 }
@@ -169,6 +177,9 @@ function refreshCode(){
   $('fCodeHelp').textContent = !db ? 'Can\'t connect right now. Check your internet.'
     : preview ? 'Preview: type the practice code ' + $('pvCode').textContent + ' (shown in the purple bar at the top).'
     : locked ? ''
+    : live && sess && sess.rejoin === 'signin' ? 'This phone was signed in again, so your place in the exam was lost. Type the code again to rejoin.'
+    : live && sess && sess.rejoin === 'missing' ? 'Your place in this exam wasn\'t found. Type the code again to rejoin.'
+    : sess && !sess.started && sess.waitFor && sess.waitFor !== String(exam.startedAt) && !exam.hold ? 'The invigilator stopped the last exam before it started. Ask for the new code and type it here.'
     : exam.hold ? 'The invigilator cancelled this exam. Wait for a new link or code.'
     : live && hadCode ? 'The invigilator made a new code. Ask for it and type it here.'
     : live ? 'Letters and numbers. Capitals or small letters both work.'
@@ -193,7 +204,8 @@ $('codeForm').addEventListener('submit', async ev => {
   else {
     // joining the waiting list is the check: the server accepts the record only with the right code
     const w = {track:TR, examId:String(exam.startedAt), code:v, codeAt:exam.codeAt || 0, name:sess.name, clinic:sess.clinic || '', phone:sess.phone, position:sess.pos, joinedAt:firebase.firestore.FieldValue.serverTimestamp(), consentVer:sess.consentVer || CONSENT_VER, consentAt:firebase.firestore.FieldValue.serverTimestamp()};
-    try { await Promise.race([db.doc('waiting/' + uid + '_' + TR).set(w), new Promise((_, no) => setTimeout(() => no({code:'timeout'}), 12000))]); ok = true; }
+    var joinT0 = deviceNow(), joinT1 = 0;
+    try { await Promise.race([db.doc('waiting/' + uid + '_' + TR).set(w), new Promise((_, no) => setTimeout(() => no({code:'timeout'}), 12000))]); ok = true; joinT1 = deviceNow(); }
     catch(e){ offline = !denied(e); }
   }
   $('codeBtn').disabled = false; $('codeBtn').textContent = 'Continue';
@@ -213,8 +225,14 @@ $('codeForm').addEventListener('submit', async ev => {
     else fieldErr('fCode', 'That code is not right. Check it with the invigilator. ' + left + ' tr' + (left === 1 ? 'y' : 'ies') + ' left.');
     $('fCode').focus(); $('fCode').select(); return;
   }
-  if (!preview){ try { const c = (await withTimeout(db.doc('waiting/' + uid + '_' + TR).get())).data().consentAt; sess.consentAt = {s: c.seconds, ns: c.nanoseconds}; sess.consentVer = sess.consentVer || CONSENT_VER; } catch(e){} }
-  sess.tries = 0; sess.codeOk = preview ? String(exam.startedAt) : codeTag(); lsSet(sess);
+  if (!preview){ try { const c = (await withTimeout(db.doc('waiting/' + uid + '_' + TR).get())).data().consentAt; sess.consentAt = {s: c.seconds, ns: c.nanoseconds}; sess.consentVer = sess.consentVer || CONSENT_VER;
+    // the record's time is the server's clock at the write: the offset to it is exact to the round trip, so every
+    // phone's countdown ends together (the Date header alone is only to the second)
+    if (joinT1 && joinT1 - joinT0 < 3000){ clockOff = Math.round(c.toMillis() - (joinT0 + joinT1) / 2); clockOk = clockPrecise = true; sess.clockOff = clockOff; sess.clockAt = deviceNow(); sess.clockSkew = SKEW; }
+  } catch(e){} }
+  sess.tries = 0; sess.codeOk = preview ? String(exam.startedAt) : codeTag(); sess.uid = uid; delete sess.rejoin; lsSet(sess);
+  // a new waiting record exists now, so an earlier "questions didn't load" (refused) no longer applies
+  qsErr = false; qsTries = 0; clearTimeout(qsRetry); qsRetry = null;
   $('fCode').value = ''; fieldErr('fCode', ''); say('Code accepted'); goReady();
 });
 $('codeBack').onclick = () => {
@@ -233,7 +251,9 @@ function refreshReady(){
   const s = eff(), left = (exam.endsAt || 0) - now();
   statusChip($('rChip'));
   $('rN').textContent = (qsReady() && N) || exam.count || '–';
-  if (db && s === 'live' && sess && !sess.started && qsReady()) return beginTest();
+  const cd = s === 'live' && inCountdown() && sess && !sess.started;
+  paintCountdown(cd);
+  if (db && s === 'live' && sess && !sess.started && !inCountdown() && qsReady()) return beginTest();
   // a test already under way whose questions have just arrived (after a reload or a failed first load)
   if (db && s === 'live' && sess && sess.started && !sess.done && firstState && qsReady()) return showQ();
   if (db && s === 'live' && !qsReady() && !qsErr && !qsLoading) loadLiveQs();
@@ -245,11 +265,24 @@ function refreshReady(){
   w.textContent = sess && sess.started && !sess.done && !firstState ? 'Reconnecting to your test. Keep this page open: your answers so far are saved.'
     : !db ? 'Can\'t connect right now. Check your internet.'
     : bad ? 'The questions didn\'t load. Check your internet, then press Try again.'
+    : s === 'live' && qsWait ? 'Reconnecting… Your test starts as soon as the connection is back. Keep this page open.'
+    : cd ? 'Get ready. The first question opens by itself when the countdown ends.'
     : s === 'live' ? 'The exam has started. Loading your first question…'
     : exam.hold ? 'The invigilator cancelled this exam. Wait for a new link or code.'
+    : s === 'ended' && sess && !sess.started && sess.waitFor === String(exam.startedAt) ? 'The invigilator ended the exam before it started. Keep this page open and ask the invigilator what happens next.'
     : s === 'ended' ? 'This exam has ended. Ask the invigilator what to do next.'
-    : s === 'open' ? 'You\'re in. Keep this page open: your test starts by itself as soon as the invigilator starts the exam.'
+    : s === 'open' ? 'You\'re in. The test starts when the invigilator starts the exam. Keep this page open.'
     : 'Keep this page open. Your test starts by itself when the invigilator starts the exam.';
+}
+// big 10…1 countdown to startsAt (server time via now()); screen readers hear 10, 5 and "Starting now"
+let lastCount = null;
+function paintCountdown(on){
+  const box = $('rCountBox');
+  if (!on){ if (!box.hidden && lastCount !== null && lastCount <= 1) say('Starting now'); box.hidden = true; lastCount = null; return; }
+  const n = Math.min(10, Math.max(1, Math.ceil((exam.startsAt - now()) / 1000)));   // 10…1 (the invigilator's clock can add a few hundred ms)
+  if (sess && sess.waitFor !== String(exam.startedAt)){ sess.waitFor = String(exam.startedAt); lsSet(sess); }
+  box.hidden = false;
+  if (n !== lastCount){ $('rCount').textContent = n; if (n === 10 || n === 5 || (lastCount === null && n < 10)) say('Your test starts in ' + n + ' seconds'); lastCount = n; }
 }
 $('backBtn').onclick = () => {
   if (sess){ $('fName').value = sess.name; $('fPhone').value = sess.phone; $('fClinic').value = sess.clinic || ''; $('fPos').value = sess.pos; }
@@ -257,10 +290,13 @@ $('backBtn').onclick = () => {
 };
 // the test starts by itself for everyone waiting as soon as the invigilator starts the exam
 // (and straight away for anyone who joins while it is already running)
+// waiting through the countdown: question 1 starts at startsAt exactly; joined later or the questions arrived late:
+// it starts now, so nobody loses part of their first 33 seconds
+const qStartAt = () => { const t = now(), st = exam.startsAt || 0; return st && t - st < 2000 ? st : t; };
 function beginTest(){
-  if (!sess || sess.started || eff() !== 'live' || !qsReady() || $('sReady').hidden) return;
+  if (!sess || sess.started || eff() !== 'live' || inCountdown() || !qsReady() || $('sReady').hidden) return;
   if (!codeOk()) return goCode();
-  sess = Object.assign(sess, {started:true, done:false, saved:false, made:false, endsAt:exam.endsAt || 0, examId:String(exam.startedAt), pid:'', i:0, answers:Array(N).fill(-1), sel:-1, away:0, order:makeOrder(), opt:QS.map(q => shuf(q.o.map((_,k) => k))), qStart:now(), t0:now()});
+  sess = Object.assign(sess, {started:true, done:false, saved:false, made:false, refused:false, lost:false, uid, endsAt:exam.endsAt || 0, examId:String(exam.startedAt), pid:'', i:0, answers:Array(N).fill(-1), sel:-1, away:0, order:makeOrder(), opt:QS.map(q => shuf(q.o.map((_,k) => k))), qStart:qStartAt(), t0:qStartAt()});
   sess.pid = uid + '_' + TR + '_' + sess.examId;   // one attempt record per person per exam (firestore.rules)
   lsSet(sess); saveFailed = false; write('in_progress'); showQ();
 };
@@ -272,30 +308,34 @@ const TS = () => firebase.firestore.FieldValue.serverTimestamp();
 function write(status){
   if (preview){ saveFailed = false; lastSaved = now(); if (status === 'submitted') finalSaved = true; paintSave(); return; }
   if (!db || !uid || !sess || !sess.pid) { if (db && !uid) { saveFailed = true; if (status === 'submitted') finalSaved = false; paintSave(); } return; }
-  const snap = {answers:sess.answers.slice(), i:sess.i, away:sess.away || 0, status}, my = ++writeSeq;
+  // Each save belongs to the session and record it was made for (s, pid), fixed now: it runs later, in the queue,
+  // and by then the page may hold another session (Finish, a new join). It never writes to that one's record or
+  // changes that one's save state on screen.
+  const s = sess, pid = s.pid, snap = {answers:s.answers.slice(), i:s.i, away:s.away || 0, status}, my = ++writeSeq;
+  const mine = () => s === sess;
+  const ok = () => { s.made = true; if (status === 'submitted') s.saved = true; lsSave(s); if (mine()){ saveFailed = false; lastSaved = now(); if (status === 'submitted') finalSaved = true; } };
   const attempt = async n => {
-    if (my !== writeSeq) return;   // a newer save is queued and carries every answer: skip this older one
+    if (my !== writeSeq && mine()) return;   // a newer save of this session is queued and carries every answer: skip this older one
+    const ref = db.doc('results/' + pid);
     try {
-      const ref = db.doc('results/' + sess.pid);
-      let made = sess.made;
-      if (!made){ const sn = await withTimeout(ref.get()); made = sn.exists; if (made && sn.data().status === 'submitted'){ sess.made = true; sess.saved = true; lsSet(sess); finalSaved = true; saveFailed = false; paintSave(); return; } }
+      let made = s.made;
+      if (!made){ const sn = await withTimeout(ref.get()); made = sn.exists; if (made && sn.data().status === 'submitted'){ status = 'submitted'; ok(); paintSave(); return; } }
       const ch = Object.assign({}, snap, {updatedAt:TS()}); if (status === 'submitted') ch.finishedAt = TS();
       if (made) await withTimeout(ref.update(ch));
       else {   // the record is always created as in_progress; a submit that is also the first save follows straight after
-        await withTimeout(ref.set(Object.assign({track:TR, examId:sess.examId, uid, name:sess.name, clinic:sess.clinic || '', phone:sess.phone, position:sess.pos, consentVer:sess.consentVer || CONSENT_VER, consentAt:sess.consentAt ? new firebase.firestore.Timestamp(sess.consentAt.s, sess.consentAt.ns) : null, startedAt:TS(), updatedAt:TS()}, snap, {status:'in_progress'})));
+        await withTimeout(ref.set(Object.assign({track:TR, examId:s.examId, uid, name:s.name, clinic:s.clinic || '', phone:s.phone, position:s.pos, consentVer:s.consentVer || CONSENT_VER, consentAt:s.consentAt ? new firebase.firestore.Timestamp(s.consentAt.s, s.consentAt.ns) : null, startedAt:TS(), updatedAt:TS()}, snap, {status:'in_progress'})));
+        s.made = true;
         if (status === 'submitted') await withTimeout(ref.update(ch));
       }
-      sess.made = true; saveFailed = false; lastSaved = now();
-      if (status === 'submitted'){ finalSaved = true; sess.saved = true; }
-      lsSet(sess);
+      ok();
     } catch(e){
       // refused because an earlier (delayed) submit already reached the server: that is a success
-      if (denied(e)){ try { const sn = await withTimeout(db.doc('results/' + sess.pid).get()); if (sn.exists && sn.data().status === 'submitted'){ sess.made = true; sess.saved = true; lsSet(sess); finalSaved = true; saveFailed = false; paintSave(); return; } } catch(x){} }
+      if (denied(e)){ try { const sn = await withTimeout(ref.get()); if (sn.exists && sn.data().status === 'submitted'){ status = 'submitted'; ok(); paintSave(); return; } } catch(x){} }
       // otherwise refused by the server = the exam has closed for this attempt; retrying won't help
       // no connection (timed out): say so now. The SDK keeps the write and sends it when back online; a newer save also retries.
       if (!denied(e) && e.code !== 'timeout' && n < 3) { await new Promise(r => setTimeout(r, 1500*n)); return attempt(n+1); }
-      saveFailed = true; if (status === 'submitted') finalSaved = false;
-      if (denied(e)) sess.refused = true;
+      if (denied(e)){ s.refused = true; lsSave(s); }
+      if (mine()){ saveFailed = true; if (status === 'submitted') finalSaved = false; }
     }
     paintSave();
   };
@@ -311,6 +351,7 @@ function paintSave(){
   const el = $('dSave'), fs = finalSaved;
   el.className = 'savestate ' + (fs === true ? 'ok' : fs === false ? 'bad' : 'wait');
   el.textContent = preview ? 'Preview: nothing was saved.' : fs === true ? 'Your answers are saved. You can close this page.'
+    : fs === false && sess && sess.lost ? 'Show this screen to the invigilator before you leave.'
     : fs === false && sess && sess.refused ? 'The exam closed before your last answers reached the invigilator. The answers saved before that are kept. Show this screen to the invigilator.'
     : fs === false ? 'Your answers were not saved. Check your internet and try again. If it still fails, show this screen to the invigilator before you leave.'
     : 'Saving your answers…';
@@ -387,10 +428,11 @@ function paintDone(){
   const closed = sess.closed;
   show('sDone');
   const answered = sess.answers.filter(x => x >= 0).length;
-  $('dTitle').textContent = closed === 'ended' ? 'Exam ended' : closed ? 'Time is up' : 'Test submitted';
-  $('dMsg').textContent = (closed === 'ended' ? 'The invigilator ended the exam. Your answers so far were submitted. '
+  $('dTitle').textContent = sess.lost ? 'Signed out during the test' : closed === 'ended' ? 'Exam ended' : closed ? 'Time is up' : 'Test submitted';
+  $('dMsg').textContent = sess.lost ? 'This phone was signed out while the test was open, so it can\'t save any more answers. The invigilator has the answers saved before that.'
+    : (closed === 'ended' ? 'The invigilator ended the exam. Your answers so far were submitted. '
       : closed ? 'Time is up. Your answers so far were submitted. ' : 'Thank you. ')
-    + 'You answered ' + answered + ' of ' + N + ' questions. The invigilator will share the results.';
+    + 'You answered ' + answered + ' of ' + (sess.answers ? sess.answers.length : N) + ' questions. The invigilator will share the results.';
   const pv = $('dScore'); pv.hidden = !preview;
   if (preview){ const sc = previewScore(sess.answers), lc = lvCount();
     pv.textContent = sc ? 'Your score in this preview: ' + sc.t + ' / ' + N + ' (' + Math.round(sc.t / N * 100) + '%) · Easy ' + sc.e + '/' + lc.e + ' · Medium ' + sc.m + '/' + lc.m + ' · Hard ' + sc.h + '/' + lc.h + '. Staff never see their score; it only shows here in the preview.' : 'The correct answers are not saved yet, so no score can be shown.'; }
@@ -500,7 +542,9 @@ function examState(id){ if (id === curId()){ if (exam.status === 'open') return 
 function examList(){
   const ids = new Set();
   results.forEach(r => { if ((r.track || 'pharmacist') === TR && r.examId) ids.add(String(r.examId)); });
-  Object.values(exams).forEach(e => { if (e.track === TR && e.examId) ids.add(String(e.examId)); });
+  // an exam with no results left (deleted, or nobody took it) is listed only while it is the current or the
+  // last exam, so "Delete old results" and "Delete results of this exam" also take it out of the picker
+  Object.values(exams).forEach(e => { if (e.track === TR && e.examId && (String(e.examId) === curId() || String(e.examId) === String(exam.lastId || ''))) ids.add(String(e.examId)); });
   if (curId() && exam.status !== 'idle') ids.add(curId());
   return [...ids].sort((a, b) => +b - +a).map(id => ({id, st: examState(id)}));
 }
@@ -579,8 +623,10 @@ function paintAdmin(){
     : (secCode.madeAt ? 'Made ' + fmtD(secCode.madeAt) + '. ' : '') + (live ? 'Anyone who joins now needs this code.' : 'If you press Start more than 2 hours after this, a fresh code is made for you.');
   if (exam.hold && !live) $('aCodeMeta').textContent = 'No exam is set up, so the questions can be changed. When they are ready, press Set up exam to make the security code, or just press Start.';
   $('aSetupWrap').hidden = !(exam.hold && !live) || preview; $('aSetup').disabled = !!startBlock() || startBusy;
-  if (exam.status !== 'open' || preview) cancelArmed = false;
+  const cd = inCountdown();
+  if (!(exam.status === 'open' || cd) || preview) cancelArmed = false;
   $('aCancelWrap').hidden = exam.status !== 'open' || preview || cancelArmed; $('aCancelBox').hidden = !cancelArmed;
+  $('aCancel2Wrap').hidden = !cd || preview || cancelArmed;
   $('aCancelQ').innerHTML = '<b>Cancel this exam?</b> ' + (code ? 'The code ' + esc(code) + ' stops working' : 'The exam is taken down') + (p.waiting.length ? ' and the ' + esc(plural(p.waiting.length, 'person', 'people')) + ' waiting will need a new code later' : '') + '. Questions can then be changed. Nothing is deleted.';
   if (!code) codeArmed = false;
   $('aCodeBox').hidden = !codeArmed;
@@ -592,7 +638,8 @@ function paintAdmin(){
   if (!live) endArmed = false;
   $('aEnd').hidden = endArmed; $('aEndBox').hidden = !endArmed;
   const nProg = cur.length - sub.length;
-  $('aEndText').textContent = nProg ? 'End the exam now? ' + plural(nProg, T.one + ' is', T.many + ' are') + ' still taking the test. Their answers so far will be submitted.'
+  $('aEndText').textContent = cd ? 'End the exam now, before it starts? Nobody has started yet. The countdown stops for everyone.'
+    : nProg ? 'End the exam now? ' + plural(nProg, T.one + ' is', T.many + ' are') + ' still taking the test. Their answers so far will be submitted.'
     : 'End the exam now? Nobody is taking the test at the moment. No one else will be able to start.';
   { const why = startBlock(); $('aNoQs').textContent = why ? 'Start exam is blocked. ' + why : ''; $('aNoQs').hidden = !why || live; }
   $('aTry').disabled = !N;
@@ -620,7 +667,7 @@ function paintMarks(){
   if (sel.dataset.html !== html){ sel.innerHTML = html; sel.dataset.html = html; }
   sel.value = id; sel.disabled = list.length < 2;
   $('mSub').innerHTML = !id ? 'No exams yet' : st === 'notstarted' ? 'Showing <b>' + esc(fmtDay(+id)) + '</b> · not started yet'
-    : 'Showing <b>' + esc(examName(id)) + '</b> · ' + (st === 'live' ? 'live' : 'finished') + ' · <i class="live"></i>updates live' + (lastUpd ? ', last ' + fmtT(lastUpd) : '');
+    : 'Showing <b>' + esc(examName(id)) + '</b> · ' + (st === 'live' ? 'live' : 'finished') + ' · <i class="livedot"></i>updates live' + (lastUpd ? ', last ' + fmtT(lastUpd) : '');
   $('thS').textContent = 'Score /' + n; $('thE').textContent = 'Easy /' + lc.e; $('thM').textContent = 'Medium /' + lc.m; $('thH').textContent = 'Hard /' + lc.h;
 
   const all = rank(rowsForExam(id)), done = all.filter(r => r.status === 'submitted').length;
@@ -640,8 +687,10 @@ function paintMarks(){
   res.innerHTML = filtered && all.length ? 'Showing <b>' + rows.length + ' of ' + all.length + '</b> in the ' + esc(examName(id)) + (q ? ' matching “' + esc(q) + '”' : '')
     + (fSt !== 'all' ? ' · ' + (fSt === 'run' ? 'in progress' : 'submitted') + ' only' : '') + ' <button class="link" type="button" data-clear="1">Clear search and filter</button>' : '';
   if (!all.length){
-    $('aBody').innerHTML = '<tr><td colspan="' + cols + '" class="empty"><b>' + (st === 'live' ? 'No one has started yet' : 'No results for this exam') + '</b><p>'
-      + (st === 'live' ? 'Rows appear here as each ' + esc(T.one) + ' starts.' : 'Pick another exam above.') + '</p></td></tr>';
+    // no exam at all, the only exam, or one of several: the hint never points to a picker with nothing else in it
+    $('aBody').innerHTML = '<tr><td colspan="' + cols + '" class="empty"><b>' + (!id ? 'No exams yet' : st === 'live' ? 'No one has started yet' : 'No results for this exam') + '</b><p>'
+      + (!id ? 'Marks appear here once the first exam starts.' : st === 'live' ? 'Rows appear here as each ' + esc(T.one) + ' starts.'
+        : list.some(x => x.id !== id && x.st !== 'notstarted') ? 'No one took this exam, or its results were deleted. Pick another exam above to see its marks.' : 'No one took this exam, or its results were deleted.') + '</p></td></tr>';
     return;
   }
   if (!rows.length){
@@ -661,7 +710,12 @@ function paintMarks(){
 }
 function paintAdminTimes(){
   if (!isAdmin || $('sAdmin').hidden) return; const s = eff();
-  if (s === 'live'){
+  if (s === 'live' && inCountdown()){
+    const n = Math.min(10, Math.ceil((exam.startsAt - now()) / 1000));
+    chip($('aChip'), 'live', 'Starting in ' + n + ' s');
+    $('aBig').textContent = 'Starts in ' + n + ' s'; $('aTimes').textContent = 'Everyone waiting sees the same countdown. The exam closes at ' + fmtT(exam.endsAt) + '.';
+  }
+  else if (s === 'live'){
     const left = mmss(exam.endsAt - now());
     chip($('aChip'), 'live', 'Exam is live · ' + left + ' left');
     $('aBig').textContent = left + ' left'; $('aTimes').textContent = 'Started at ' + fmtT(exam.liveAt || exam.startedAt) + ' · closes at ' + fmtT(exam.endsAt) + '.';
@@ -747,14 +801,15 @@ $('aStart').onclick = async () => {
     // start + freeze this exam's questions and answers in one transaction, only if it is still this ready exam
     const e = await examTx((t, cur) => {
       if (cur.status !== 'open' || String(cur.startedAt) !== id) return null;
-      const at = now(), e = Object.assign({}, cur, {status: 'live', liveAt: at, endsAt: at + m * 60000, windowMin: m, count: N}); delete e.lastId; delete e.codeHash;
-      t.set(db.doc('exams/' + fzId(TR, id)), {track: TR, examId: id, qs: QS, answers: key.answers.slice(0, N), liveAt: at, endsAt: e.endsAt, windowMin: m, startedBy: (typeof myEmail === 'string' && myEmail) || '', frozenAt: at});
+      const at = now(), startsAt = at + START_DELAY;   // everyone's 10-second countdown ends here; the window starts then
+      const e = Object.assign({}, cur, {status: 'live', startsAt, liveAt: startsAt, endsAt: startsAt + m * 60000, windowMin: m, count: N}); delete e.lastId; delete e.codeHash;
+      t.set(db.doc('exams/' + fzId(TR, id)), {track: TR, examId: id, qs: QS, answers: key.answers.slice(0, N), liveAt: startsAt, endsAt: e.endsAt, windowMin: m, startedBy: (typeof myEmail === 'string' && myEmail) || '', frozenAt: at});
       t.set(db.doc(T.state), e);
       return e;
     });
     if (!e) throw new Error(STALE);
     fSt = 'all'; fTxt = ''; $('aSearch').value = ''; selExam = ''; codeArmed = false;
-    msg('Exam started for ' + plural(n, 'person', 'people') + ' waiting. It closes at ' + fmtT(e.endsAt) + '.' + note, !!note);
+    msg('Starting in 10 seconds for ' + plural(n, 'person', 'people') + ' waiting. The exam closes at ' + fmtT(e.endsAt) + '.' + note, !!note);
   }
   catch(e){ $('aErr').textContent = /^Exam not started/.test(e.message || '') || e.message === STALE ? e.message : 'Could not start the exam: ' + errText(e) + '. Check your connection and press Start exam again.'; }
   startBusy = false; paintAdmin();
@@ -782,16 +837,19 @@ $('aEndYes').onclick = async () => {
 // "Cancel this exam": takes a ready (not started) exam back to "not set up", so questions can be changed.
 // The code is removed, the waiting list is cleared, and nothing sets up a new exam until Set up exam or Start.
 $('aCancel').onclick = () => { cancelArmed = true; paintAdmin(); $('aCancelNo').focus(); };
-$('aCancelNo').onclick = () => { cancelArmed = false; paintAdmin(); $('aCancel').focus(); };
+$('aCancelNo').onclick = () => { cancelArmed = false; paintAdmin(); (inCountdown() ? $('aCancel2') : $('aCancel')).focus(); };
+$('aCancel2').onclick = () => { cancelArmed = true; paintAdmin(); $('aCancelNo').focus(); };
 $('aCancelYes').onclick = async () => {
-  if (exam.status !== 'open'){ cancelArmed = false; paintAdmin(); return; }
+  if (!(exam.status === 'open' || inCountdown())){ cancelArmed = false; paintAdmin(); return; }
   const b = $('aCancelYes'); b.disabled = true;
   try {
     const id = curId();
     const ok = await examTx((t, cur) => {
-      if (cur.status !== 'open' || String(cur.startedAt) !== id) return false;
+      const countdown = cur.status === 'live' && cur.startsAt && now() < cur.startsAt;
+      if (!(cur.status === 'open' || countdown) || String(cur.startedAt) !== id) return false;
       const e = {status: 'idle', hold: true}; if (cur.lastId) e.lastId = cur.lastId;
       t.set(db.doc(T.state), e); t.delete(db.doc(T.code));
+      if (countdown) t.delete(db.doc('exams/' + fzId(TR, id)));   // started and cancelled within 10 s: no exam to keep
       return true;
     });
     if (!ok) throw new Error(STALE);
@@ -966,7 +1024,7 @@ $('aCodeNew').onclick = () => { if (!canJoin(eff())) return; codeArmed = true; p
 $('aCodeNo').onclick = () => { codeArmed = false; paintAdmin(); $('aCodeNew').focus(); };
 $('aCodeYes').onclick = async () => {
   const b = $('aCodeYes'), n = people().waiting.length; b.disabled = true;
-  try { const code = await makeCode(); codeArmed = false; msg('New code ' + code + '. ' + (n ? 'Share it with the ' + plural(n, 'person', 'people') + ' who were waiting. ' : '') + 'The old code no longer works. Anyone already answering carries on.', true); }
+  try { const code = await makeCode(); codeArmed = false; msg('New code ' + code + '. ' + (n ? 'Share it with the ' + plural(n, 'person', 'people') + (n === 1 ? ' who was waiting. ' : ' who were waiting. ') : '') + 'The old code no longer works. Anyone already answering carries on.', true); }
   catch(e){ $('aErr').textContent = e.message === STALE ? STALE : 'Could not make a new code: ' + errText(e) + '. Try again.'; }
   b.disabled = false; paintAdmin();
 };
@@ -1057,15 +1115,44 @@ let qsLoading = null;
 // (T.qsFor) instead of using the old ones. A failed fetch shows an error with Try again (qsErr).
 let qsErr = false;
 const qsReady = () => !!N && (preview || isAdmin || T.qsFor === String(exam.startedAt));
+let qsWait = false, qsTries = 0, qsRetry = null;   // qsRetry: a retry is already scheduled
+// The questions are fetched with a plain REST GET (signed in), not through the SDK's live connection: the rule
+// "not before startsAt" compares with request.time, which a plain GET sets to the exact moment of the read.
+const fromVal = v => 'stringValue' in v ? v.stringValue : 'integerValue' in v ? Number(v.integerValue) : 'doubleValue' in v ? v.doubleValue
+  : 'booleanValue' in v ? v.booleanValue : 'arrayValue' in v ? (v.arrayValue.values || []).map(fromVal) : 'mapValue' in v ? fromFields(v.mapValue.fields || {}) : null;
+const fromFields = f => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, fromVal(v)]));
+async function fetchQuestions(){
+  if (!window.firebase || !firebase.auth().currentUser) return (await db.doc('questions/' + TR).get()).data();
+  const emu = window.__emuOn;   // set by firebase.js only when the page is on the emulator
+  const url = (emu ? 'http://' + emu + ':8080' : 'https://firestore.googleapis.com') + '/v1/projects/' + firebase.app().options.projectId + '/databases/(default)/documents/questions/' + TR;
+  let r;
+  try { r = await fetch(url, {headers: {Authorization: 'Bearer ' + await firebase.auth().currentUser.getIdToken()}, cache: 'no-store'}); }
+  catch(e){ throw {code: 'unavailable'}; }   // no connection
+  if (r.status === 403) throw {code: 'permission-denied'};
+  if (!r.ok) throw {code: r.status === 404 ? 'not-found' : 'unavailable'};
+  return fromFields((await r.json()).fields || {});
+}   // no connection when the questions were due: "Reconnecting…", keep trying
+// one place schedules retries, so a failure can never start a tight loop of requests (and freeze the page)
+const retryQs = ms => { if (!qsRetry) qsRetry = setTimeout(() => { qsRetry = null; loadLiveQs(); }, ms); };
 function loadLiveQs(){
-  if (isAdmin || preview || eff() !== 'live' || !sess || !codeOk() || qsReady()) return Promise.resolve();
-  if (!qsLoading) qsLoading = db.doc('questions/' + TR).get().then(q => {
-      if (!(q.exists && Array.isArray(q.data().qs) && q.data().qs.length)) throw new Error('empty');
-      setQs(TR, q.data().qs); T.qsFor = String(exam.startedAt); qsErr = false;
-    }).catch(() => { qsErr = true; }).finally(() => { qsLoading = null; refreshReady(); });
+  // a session saved under another sign-in never asks (the server would refuse it); resume() sorts that session out
+  if (isAdmin || preview || eff() !== 'live' || inCountdown() || !sess || !codeOk() || (sess.uid && sess.uid !== uid) || qsReady() || qsRetry) return Promise.resolve();
+  if (!qsLoading) qsLoading = fetchQuestions().then(d => {
+      if (!(d && Array.isArray(d.qs) && d.qs.length)) throw new Error('empty');
+      setQs(TR, d.qs); T.qsFor = String(exam.startedAt); qsErr = false; qsWait = false; qsTries = 0;
+    }).catch(e => {
+      // the server opens questions at startsAt by ITS clock: a few hundred ms early is refused, so try again quietly
+      // a few hundred ms after joining, the brand-new waiting record may not be visible yet: also retry quietly (3 tries)
+      if (denied(e) && (now() < (exam.startsAt || 0) + 5000 || ++qsTries <= 3)){ retryQs(700); return; }
+      if (e && (e.code === 'unavailable' || offlineState || !navigator.onLine)){ qsWait = true; retryQs(2000); return; }
+      // still refused: the server has no waiting record for this sign-in and exam. Before the test has started the
+      // way back is the code (it writes a new one); "check your internet" would never fix it
+      if (denied(e) && sess && !sess.started){ qsTries = 0; delete sess.codeOk; sess.rejoin = 'missing'; lsSet(sess); goCode(); return; }
+      qsErr = true; qsWait = false;
+    }).finally(() => { qsLoading = null; refreshReady(); });
   return qsLoading;
 }
-$('rRetry').onclick = () => { qsErr = false; $('rRetry').hidden = true; refreshReady(); loadLiveQs(); };
+$('rRetry').onclick = () => { qsErr = false; qsTries = 0; clearTimeout(qsRetry); qsRetry = null; $('rRetry').hidden = true; refreshReady(); loadLiveQs(); };
 async function onExam(snap){
   // When the server can't be reached, the SDK reports an offline snapshot that says "no exam". That is not a
   // real state: acting on it would end a running test. Wait for the server's answer instead.
@@ -1085,6 +1172,10 @@ function resume(){
   if (isAdmin) return;
   const s = lsGet(); if (!s || !s.name) return;
   sess = s;
+  // The waiting record and the attempt record are keyed by the sign-in that made them (results/<uid>_…), and the
+  // server refuses them to any other sign-in. If this phone is now signed in as someone else (signed out, an
+  // invigilator signed in on it, or the browser dropped the sign-in), the saved code and test can't be used.
+  if (s.uid && s.uid !== uid && !(s.done && s.saved)) return signInChanged(s);
   if (s.started && !s.done){
     whoLine();
     if (String(exam.startedAt) !== s.examId || eff() !== 'live'){ finish(true); return; }
@@ -1096,6 +1187,14 @@ function resume(){
     whoLine(); finalSaved = null; paintDone(); write('submitted'); return;   // the last submit never reached the server: try again
   }
   goNext();
+}
+function signInChanged(s){
+  const keep = {name: s.name, phone: s.phone, clinic: s.clinic, pos: s.pos, consentVer: s.consentVer || CONSENT_VER, started: false};
+  whoLine();
+  if (s.started){   // mid-test (or its last save never arrived): nothing more can be saved from here
+    sess = Object.assign(s, {done: true, lost: true, refused: true}); lsSet(sess); finalSaved = false; paintDone(); return;
+  }
+  sess = Object.assign(keep, {rejoin: 'signin'}); lsSet(sess); goNext();
 }
 function applyResults(s){
   resDocs = s.docs.map(d => d.id); results = []; Object.keys(rawDocs).forEach(k => delete rawDocs[k]);
@@ -1118,6 +1217,8 @@ function watchLock(){
 async function boot(){
   await Promise.race([syncClock(), new Promise(r => setTimeout(r, 3000))]);   // server clock first (gives up after 3 s)
   { const h = (location.hash || '').slice(1); useTrack(TRACKS[h] ? h : 'pharmacist'); }
+  // a staff page reload keeps the exact offset it measured (same device, same clock, within 6 hours)
+  if (!new URLSearchParams(location.search).has('admin')){ const s0 = lsGet(); if (s0 && typeof s0.clockOff === 'number' && s0.clockSkew === SKEW && Math.abs(deviceNow() - (s0.clockAt || 0)) < 6 * 3600e3){ clockOff = s0.clockOff; clockOk = clockPrecise = true; } }
   applyTrackText(); show('sLogin'); statusChip($('stChip'));
   // a test in progress on this phone: show "Reconnecting" straight away (not the details form) while the
   // connection opens; resume() decides what happens only after the first real exam-state snapshot

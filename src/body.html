@@ -121,6 +121,7 @@
       <h1 id="rHello">Hello</h1>
       <div><span id="rChip" class="chip idle"><i class="dot"></i><span></span></span></div>
       <p class="notice info" id="rWait" role="status"></p>
+      <div class="countdown" id="rCountBox" hidden><span>Your test starts in</span><b id="rCount" aria-hidden="true">10</b></div>
       <div><button class="btn btn-ghost" id="rRetry" type="button" hidden>Try again</button></div>
     </div>
     <div class="facts">
@@ -255,15 +256,12 @@
           <p class="notice warn" id="aMinsWarn" hidden></p>
           <div><button class="btn btn-lg" id="aStart" type="button">Start exam</button></div>
           <div id="aCancelWrap" hidden><button class="btn btn-quiet btn-sm" id="aCancel" type="button">Cancel this exam</button></div>
-          <div class="notice warn stack s8" id="aCancelBox" hidden role="alertdialog" aria-labelledby="aCancelQ">
-            <span id="aCancelQ"></span>
-            <div class="row"><button class="btn btn-danger" id="aCancelYes" type="button">Cancel exam</button><button class="btn btn-ghost" id="aCancelNo" type="button">Keep exam</button></div>
-          </div>
         </div>
         <div class="stack s8 grow" id="aLiveRow" hidden>
           <h3>Exam is running</h3>
           <div class="bigclock" id="aBig">–</div>
           <p class="muted" id="aTimes"></p>
+          <div id="aCancel2Wrap" hidden><button class="btn btn-quiet btn-sm" id="aCancel2" type="button">Cancel this exam</button></div>
           <div id="aEndWrap"><button class="btn btn-danger" id="aEnd" type="button">End exam now</button></div>
           <div class="notice bad stack s8" id="aEndBox" hidden>
             <span id="aEndText"></span>
@@ -271,11 +269,15 @@
           </div>
         </div>
       </div>
+      <div class="notice warn stack s8" id="aCancelBox" hidden role="alertdialog" aria-labelledby="aCancelQ">
+        <span id="aCancelQ"></span>
+        <div class="row"><button class="btn btn-danger" id="aCancelYes" type="button">Cancel exam</button><button class="btn btn-ghost" id="aCancelNo" type="button">Keep exam</button></div>
+      </div>
       <p class="err" id="aErr" role="alert"></p>
     </section>
 
     <section class="card stack" aria-labelledby="waitT">
-      <div class="row between"><div><span class="eyebrow">Who's in</span><h2 id="waitT">Waiting to start · 0</h2></div><span class="help"><i class="live"></i>Live</span></div>
+      <div class="row between"><div><span class="eyebrow">Who's in</span><h2 id="waitT">Waiting to start · 0</h2></div><span class="help"><i class="livedot"></i>Live</span></div>
       <ul class="people" id="aPeople"></ul>
       <p class="help" id="aLocks"></p>
     </section>
