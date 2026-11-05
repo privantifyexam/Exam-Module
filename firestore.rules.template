@@ -23,6 +23,13 @@ service cloud.firestore {
       return e.status == 'live' && request.time.toMillis() < e.endsAt;
     }
     function shortText(v, n) { return v is string && v.size() > 0 && v.size() <= n; }
+    // strict id shapes, so nothing a staff member writes can carry markup into an id
+    function isUid(u) { return u is string && u.matches('^[A-Za-z0-9]{1,128}$'); }
+    function isExamId(x) { return x is string && x.matches('^[0-9]{1,20}$'); }
+    function isPhone(p) { return p is string && p.matches('^[0-9]{10}$'); }
+    // the privacy notice the person agreed to on the join form (its version is a date) and when (server time)
+    function isConsentVer(v) { return v is string && v.matches('^privacy-[0-9]{4}-[0-9]{2}-[0-9]{2}$'); }
+    function frozenOf(track, examId) { return get(/databases/$(database)/documents/exams/$(track + '_' + examId)).data; }
 
     // invigilator list, one document per lower-case email. Invigilators see and manage it; nobody can
     // add or remove themselves, and main accounts (from .env) are not stored here so can't be removed.
@@ -44,16 +51,27 @@ service cloud.firestore {
       allow create, update: if isAdmin() && (request.resource.data.status != 'live'
         || existsAfter(/databases/$(database)/documents/exams/$(trackOfState(d) + '_' + string(request.resource.data.startedAt))));
     }
-    // question bank (no answers): staff read only while that exam is live; invigilators can't change it then
+    // question bank (no answers): staff read only while that exam is live. Invigilators can't change it while
+    // the exam is ready (status 'open': a code has been made) or live; "Cancel this exam" sets it back first.
+    function examStatus(track) {
+      let p = /databases/$(database)/documents/exam/$(stateOf(track));
+      return exists(p) ? get(p).data.status : 'idle';
+    }
+    // staff: only while the exam is live AND only with their own waiting record for that exam (= entered the right code)
+    function waitingInLive(track) {
+      let p = /databases/$(database)/documents/waiting/$(request.auth.uid + '_' + track);
+      return exists(p) && get(p).data.examId == string(get(/databases/$(database)/documents/exam/$(stateOf(track))).data.startedAt);
+    }
     match /questions/{track} {
-      allow read: if isAdmin() || (signedIn() && examLive(track));
-      allow write: if isAdmin() && !examLive(track);
+      allow read: if isAdmin() || (signedIn() && examLive(track) && waitingInLive(track));
+      allow write: if isAdmin() && !(examStatus(track) in ['open', 'live']);
     }
     // answer keys and plain security codes: invigilator only
     match /key/{d} {
       allow read, write: if isAdmin();
     }
-    // each exam's frozen questions + answer key, and its saved scores: invigilator only
+    // each exam's frozen questions + answer key, and its saved scores: invigilator only (the frozen copy holds the
+    // answer key, so it is never readable by staff, waiting record or not)
     match /exams/{id} {
       allow read, write: if isAdmin();
     }
@@ -66,17 +84,18 @@ service cloud.firestore {
       allow read, delete: if isAdmin();
       // a staff member may read only their own record (the app never needs it, but the SDK checks it after a refused write)
       allow get: if signedIn() && id.split('_')[0] == request.auth.uid;
-      allow create, update: if signedIn() && validWaiting(id, request.resource.data);
+      allow create, update: if signedIn() && isUid(request.auth.uid) && validWaiting(id, request.resource.data);
     }
     function validWaiting(id, w) {
       let c = get(/databases/$(database)/documents/key/$(codeOf(w.track))).data;
       let e = get(/databases/$(database)/documents/exam/$(stateOf(w.track))).data;
       return isTrack(w.track) && id == request.auth.uid + '_' + w.track
-        && w.keys().hasOnly(['track', 'examId', 'code', 'codeAt', 'name', 'clinic', 'phone', 'position', 'joinedAt'])
-        && w.code == c.code && w.examId == c.examId && w.codeAt == c.madeAt
+        && w.keys().hasOnly(['track', 'examId', 'code', 'codeAt', 'name', 'clinic', 'phone', 'position', 'joinedAt', 'consentVer', 'consentAt'])
+        && isConsentVer(w.consentVer) && w.consentAt == request.time
+        && isExamId(w.examId) && w.code == c.code && w.examId == c.examId && w.codeAt == c.madeAt
         && e.status in ['open', 'live'] && string(e.startedAt) == w.examId
-        && shortText(w.name, 60) && shortText(w.clinic, 60) && w.phone is string && w.phone.matches('[0-9]{10}')
-        && shortText(w.position, 60) && w.joinedAt is int
+        && shortText(w.name, 60) && shortText(w.clinic, 60) && isPhone(w.phone)
+        && shortText(w.position, 60) && w.joinedAt == request.time
         && !exists(/databases/$(database)/documents/lockouts/$(id));
     }
     // lockouts after 5 wrong codes: a staff member records their own and may check only their own;
@@ -84,20 +103,57 @@ service cloud.firestore {
     match /lockouts/{id} {
       allow get: if isAdmin() || (signedIn() && id.split('_')[0] == request.auth.uid);
       allow list, delete: if isAdmin();
-      allow create: if signedIn() && isTrack(request.resource.data.track)
+      allow create: if signedIn() && isUid(request.auth.uid) && isTrack(request.resource.data.track)
         && id == request.auth.uid + '_' + request.resource.data.track
         && request.resource.data.keys().hasOnly(['track', 'examId', 'name', 'clinic', 'phone', 'at'])
+        && isExamId(request.resource.data.examId) && request.resource.data.at == request.time
         && request.resource.data.name is string && request.resource.data.name.size() <= 60
         && request.resource.data.clinic is string && request.resource.data.clinic.size() <= 60
-        && request.resource.data.phone is string && request.resource.data.phone.size() <= 10;
+        && (request.resource.data.phone == '' || isPhone(request.resource.data.phone));
       allow update: if false;
     }
-    // attempts: each person reads and writes their own doc; invigilator reads all and may clear
-    match /results/{uid} {
-      allow read: if isAdmin() || (signedIn() && request.auth.uid == uid);
-      // staff: own doc only, at most 20 attempts in it (each attempt is an a_<id> field)
-      allow create, update: if isAdmin() || (signedIn() && request.auth.uid == uid && request.resource.data.size() <= 20);
+    // attempts: ONE record per person per exam, results/<uid>_<track>_<examId>. A staff member may create it only
+    // while that exam is live (server time), only with a waiting record for that exam (so only after the right code),
+    // with name/clinic/phone/position copied from that record. Exact fields, no score of any kind: marks are
+    // always worked out on the invigilator's page from the answers and the exam's frozen key.
+    // Status goes in_progress -> submitted once; after that, or 30 s after the exam's end, nothing can change.
+    // Older exams stored all of a person's attempts as a_<id> maps in results/<uid>; only invigilators may change those.
+    match /results/{id} {
+      allow read: if isAdmin() || (signedIn() && id.split('_')[0] == request.auth.uid);
       allow delete: if isAdmin();
+      allow update: if isAdmin() && !('examId' in resource.data);
+      allow create: if signedIn() && attemptCreate(id, request.resource.data);
+      allow update: if signedIn() && attemptUpdate(request.resource.data, resource.data);
+    }
+    function attemptFields() { return ['track', 'examId', 'uid', 'name', 'clinic', 'phone', 'position', 'consentVer', 'consentAt', 'answers', 'i', 'away', 'status', 'startedAt', 'updatedAt', 'finishedAt']; }
+    // answers: one entry per question of that exam, each -1 (not answered) or a choice index 0-3
+    function validProgress(d, fz) {
+      return d.answers is list && d.answers.size() == fz.answers.size() && d.answers.toSet().hasOnly([-1, 0, 1, 2, 3])
+        && d.i is int && d.i >= 0 && d.i <= d.answers.size()
+        && d.away is int && d.away >= 0 && d.away <= 1000
+        && d.status in ['in_progress', 'submitted']
+        && (d.status == 'submitted' ? d.finishedAt == request.time : !('finishedAt' in d))
+        && d.updatedAt == request.time;
+    }
+    function attemptCreate(id, d) {
+      let w = get(/databases/$(database)/documents/waiting/$(request.auth.uid + '_' + d.track)).data;
+      let e = get(/databases/$(database)/documents/exam/$(stateOf(d.track))).data;
+      return isUid(request.auth.uid) && isTrack(d.track) && isExamId(d.examId)
+        && id == request.auth.uid + '_' + d.track + '_' + d.examId
+        && d.keys().hasOnly(attemptFields()) && d.uid == request.auth.uid
+        && e.status == 'live' && string(e.startedAt) == d.examId && request.time.toMillis() < e.endsAt
+        && w.examId == d.examId && d.name == w.name && d.clinic == w.clinic && d.phone == w.phone && d.position == w.position
+        && d.consentVer == w.consentVer && d.consentAt == w.consentAt
+        && d.status == 'in_progress' && d.startedAt == request.time
+        && validProgress(d, frozenOf(d.track, d.examId));
+    }
+    function attemptUpdate(n, o) {
+      let fz = frozenOf(o.track, o.examId);
+      return 'examId' in o && o.uid == request.auth.uid && o.status == 'in_progress'
+        && n.keys().hasOnly(attemptFields())
+        && n.diff(o).affectedKeys().hasOnly(['answers', 'i', 'away', 'status', 'updatedAt', 'finishedAt'])
+        && request.time.toMillis() < fz.endsAt + 30000
+        && validProgress(n, fz);
     }
   }
 }

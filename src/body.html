@@ -84,6 +84,10 @@
       <div class="field"><label for="fPos">Position</label>
         <select class="input" id="fPos" aria-describedby="fPosErr"></select>
         <p class="ferr" id="fPosErr" hidden></p></div>
+      <div class="field consent" id="fConsentBox">
+        <div class="notice info consent-note" id="fConsentText"><span><b>Your details and this assessment.</b> We store your name, mobile number, clinic, position and your answers. We use them only to mark this assessment. Only SugarCARE invigilators can see them. They are deleted after 12 months.</span></div>
+        <label class="tick" for="fConsent"><input type="checkbox" id="fConsent" aria-describedby="fConsentText fConsentErr"> I have read this and agree.</label>
+        <p class="ferr" id="fConsentErr" hidden></p></div>
       <button class="btn btn-lg" type="submit" id="loginBtn">Continue</button>
     </form>
   </div>
@@ -117,6 +121,7 @@
       <h1 id="rHello">Hello</h1>
       <div><span id="rChip" class="chip idle"><i class="dot"></i><span></span></span></div>
       <p class="notice info" id="rWait" role="status"></p>
+      <div><button class="btn btn-ghost" id="rRetry" type="button" hidden>Try again</button></div>
     </div>
     <div class="facts">
       <div class="fact"><b id="rN">50</b><span>questions</span></div>
@@ -231,6 +236,7 @@
           <h3>Share the security code</h3>
           <div class="row"><b class="seccode" id="aCode">------</b><button class="btn btn-ghost" id="aCodeCopy" type="button">Copy code</button><button class="btn btn-quiet" id="aCodeNew" type="button">Make a new code</button></div>
           <p class="help" id="aCodeMeta"></p>
+          <div id="aSetupWrap" hidden><button class="btn btn-ghost" id="aSetup" type="button">Set up exam</button></div>
           <div class="notice warn stack s8" id="aCodeBox" hidden role="alertdialog" aria-labelledby="aCodeQ">
             <span id="aCodeQ"></span>
             <div class="row"><button class="btn btn-ghost" type="button" id="aCodeYes">Make new code</button><button class="btn btn-ghost" type="button" id="aCodeNo">Keep this code</button></div>
@@ -248,6 +254,11 @@
           <p class="help" id="aNeed"></p>
           <p class="notice warn" id="aMinsWarn" hidden></p>
           <div><button class="btn btn-lg" id="aStart" type="button">Start exam</button></div>
+          <div id="aCancelWrap" hidden><button class="btn btn-quiet btn-sm" id="aCancel" type="button">Cancel this exam</button></div>
+          <div class="notice warn stack s8" id="aCancelBox" hidden role="alertdialog" aria-labelledby="aCancelQ">
+            <span id="aCancelQ"></span>
+            <div class="row"><button class="btn btn-danger" id="aCancelYes" type="button">Cancel exam</button><button class="btn btn-ghost" id="aCancelNo" type="button">Keep exam</button></div>
+          </div>
         </div>
         <div class="stack s8 grow" id="aLiveRow" hidden>
           <h3>Exam is running</h3>
@@ -291,12 +302,19 @@
       <div class="row">
         <div class="dl" role="group" aria-label="Download mark list"><span class="dl-l">Download</span><button class="btn btn-sm btn-ghost" data-dl="csv" type="button">CSV</button><button class="btn btn-sm btn-ghost" data-dl="xlsx" type="button">Excel</button><button class="btn btn-sm btn-ghost" data-dl="pdf" type="button">PDF</button></div>
         <div class="more"><button class="btn btn-sm btn-quiet" type="button" id="aMore" aria-expanded="false" aria-controls="aMenu">More</button>
-          <div class="menu" id="aMenu" hidden><button type="button" id="aClear">Delete results of this exam…</button></div></div>
+          <div class="menu" id="aMenu" hidden><button type="button" id="aClear">Delete results of this exam…</button><button type="button" id="aOld">Delete old results…</button></div></div>
       </div>
     </div>
     <div class="notice bad stack s8" id="aClearBox" hidden role="alertdialog" aria-labelledby="aClearText">
       <span id="aClearText"></span>
       <div class="row"><button class="btn btn-danger" type="button" id="aClearYes">Delete results</button><button class="btn btn-ghost" type="button" id="aClearNo">Keep results</button></div>
+    </div>
+    <div class="notice warn stack s8" id="aOldBox" hidden role="alertdialog" aria-labelledby="aOldQ">
+      <div class="field" style="max-width:300px"><label for="aOldMonths">Delete results older than (months)</label>
+        <input class="input" id="aOldMonths" type="number" min="1" max="60" value="12" inputmode="numeric" aria-describedby="aOldErr aOldQ">
+        <p class="ferr" id="aOldErr" hidden></p></div>
+      <span id="aOldQ"></span>
+      <div class="row"><button class="btn btn-danger" type="button" id="aOldYes">Delete results</button><button class="btn btn-ghost" type="button" id="aOldNo">Keep results</button></div>
     </div>
     <div class="row filters">
       <div class="field examsel"><label for="aExamSel">Show results for</label><select class="input" id="aExamSel"></select></div>

@@ -42,6 +42,8 @@ function readQuestions(rows){
     if (!q) bad.push('question is empty');
     if (o.length < 2) bad.push('needs at least options A and B');
     else if (o.some(x => !x)) bad.push('options must be filled in order with no gaps (option ' + Q_LETTERS[o.indexOf('')] + ' is empty)');
+    else { const lo = o.map(x => x.toLowerCase()), d = lo.findIndex((x, i) => lo.indexOf(x) !== i);   // same as the editor: every choice different
+      if (d >= 0) bad.push('choices ' + Q_LETTERS[lo.indexOf(lo[d])] + ' and ' + Q_LETTERS[d] + ' are the same ("' + o[d].slice(0, 40) + '"); make each choice different'); }
     if (extra.length) bad.push('only choices A to D are allowed; move or remove what is in ' + extra.join(' and '));
     if (ans.length !== 1 || ai < 0) bad.push('answer must be one letter A to D');
     else if (ai >= o.length) bad.push('answer ' + ans + ' points to an empty option');
@@ -55,15 +57,17 @@ let qPending = null;
 // questions can't change while an exam is live or while anyone is waiting with the code
 function qLockWhy(){
   if (eff() === 'live') return 'Locked while the exam is live.';
+  if (exam.status !== 'open') return '';
   const n = typeof people === 'function' ? people().waiting.length : 0;
-  return n ? 'Locked while ' + n + (n === 1 ? ' person is' : ' people are') + ' waiting.' : '';
+  return n ? 'Locked while ' + n + (n === 1 ? ' person is' : ' people are') + ' waiting.' : 'Locked while this exam is set up (its code has been made).';
 }
+const qLockHint = () => eff() === 'live' ? 'You can change them after this exam ends: then press Cancel this exam in step 3.' : 'To change them, press Cancel this exam in step 3.';
 function paintQs(){
   if (!isAdmin || $('sAdmin').hidden) return;
   const lc = lvCount(), why = qLockWhy(), m = T.qMeta;
   $('qHead').textContent = N ? N + ' questions' : 'No questions yet';
   $('qCount').textContent = N ? '· Easy ' + lc.e + ' · Medium ' + lc.m + ' · Hard ' + lc.h + ' · ' + (key && Array.isArray(key.answers) && key.answers.length === N ? 'answer key saved' : 'answer key missing') : '';
-  $('qLockNote').innerHTML = why ? '<span><b>' + esc(why) + '</b> You can change questions again after this exam ends.</span>' : '';
+  $('qLockNote').innerHTML = why ? '<span><b>' + esc(why) + '</b> ' + qLockHint() + '</span>' : '';
   $('qLockNote').hidden = !why;
   $('qPick').disabled = !!why; $('qFile').disabled = !!why; $('qSave').disabled = !!why;
   $('qChanged').textContent = m && m.at ? 'Last changed ' + fmtD(m.at) + (m.by ? ' by ' + m.by : '') + '.' : '';
@@ -105,17 +109,19 @@ $('qFileX').onclick = () => { const had = !!qPending; qReset(); msg(had ? 'File 
 // saves the whole question list and its correct answers (same order) for this assessment
 async function saveSet(qs, answers){
   const why = qLockWhy(); if (why) throw new Error(why + ' Questions can be changed after this exam ends');
-  const meta = {at: Date.now(), by: (typeof myEmail === 'string' && myEmail) || ''};
-  await db.doc('questions/' + TR).set({qs, updatedAt: meta.at, updatedBy: meta.by});
+  const meta = {at: now(), by: (typeof myEmail === 'string' && myEmail) || ''};
+  // questions and answer key in ONE batch: both are saved or neither is, so they can never get out of step
+  const b = db.batch();
+  b.set(db.doc('questions/' + TR), {qs, updatedAt: meta.at, updatedBy: meta.by}); b.set(db.doc(T.key), {answers});
+  await b.commit();
   T.qMeta = meta;
-  await db.doc(T.key).set({answers});
   key = keys[TR] = {answers}; setQs(TR, qs); paintAdmin(); paintQs(); qRepaint();
   if (exam.status === 'open') await db.doc(T.state).set(Object.assign({}, exam, {count: qs.length}));   // staff see the count while waiting
 }
 $('qSave').onclick = async () => {
   // the file must still be chosen and unchanged since it was checked
   if (!qPending || !$('qFile').files.length){ qReset(); msg('Choose the Excel file again, then press Save questions.'); return; }
-  if (qLockWhy()){ $('qErrT').textContent = qLockWhy() + ' You can change questions again after this exam ends.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; return; }
+  if (qLockWhy()){ $('qErrT').textContent = qLockWhy() + ' ' + qLockHint(); $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; return; }
   const b = $('qSave'), r = qPending; b.disabled = true; b.textContent = 'Saving…';
   try {
     await saveSet(r.qs, r.answers); qReset();
@@ -156,7 +162,7 @@ function paintQList(){
   if (lock) qEditing = null;
   const shown = QS.map((q, i) => ({q, i})).filter(({q, i}) => i === qEditing || ((!qLvF || q.l === qLvF) && (!s || (q.q + ' ' + q.o.join(' ')).toLowerCase().includes(s))));
   $('qDlgT').textContent = 'Questions · ' + T.name;
-  $('qLock').hidden = !lock; $('qLock').textContent = lock ? qLockWhy() + ' You can change questions again after this exam ends.' : ''; $('qAdd').disabled = lock || qEditing !== null;
+  $('qLock').hidden = !lock; $('qLock').textContent = lock ? qLockWhy() + ' ' + qLockHint() : ''; $('qAdd').disabled = lock || qEditing !== null;
   $('qListNote').textContent = !N ? 'No questions yet. Press Add question, or upload an Excel file on the dashboard.' : 'Showing ' + shown.length + ' of ' + N + ' questions.' + (k ? '' : ' The correct answers are not saved, so none are marked.');
   const card = ({q, i}) => i === qEditing ? qForm(q, k ? k[i] : -1)
     : '<li><div class="qh"><span class="qn">' + (i + 1) + '.</span><span class="qt">' + esc(q.q) + '</span><span class="lv">' + esc(q.l) + '</span>'
@@ -184,7 +190,7 @@ function qReadForm(){
   return {q: {l, q: text, o}, ans};
 }
 async function qCommit(qs, answers, done){
-  if (qLocked()){ qSay('', qLockWhy() + ' You can change questions again after this exam ends.'); return false; }
+  if (qLocked()){ qSay('', qLockWhy() + ' ' + qLockHint()); return false; }
   qBusy = true; document.querySelectorAll('#qDlg button').forEach(b => b.disabled = true);
   try { await saveSet(qs, answers); qSay(done); return true; }
   catch(e){ qSay('', 'Could not save: ' + errText(e) + '. Nothing was changed; try again.'); return false; }

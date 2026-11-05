@@ -179,13 +179,13 @@ td.num,th.num{text-align:right}
 .gate{position:fixed;inset:0;z-index:50;overflow:auto;background:var(--surface-1);padding:48px 16px}
 .gate .col{margin:0 auto}
 .signout{margin-left:12px;background:none;border:0;padding:0;color:inherit;font:inherit;font-size:14px;min-height:32px;font-weight:700;text-decoration:underline;cursor:pointer}
-.qerr{margin:0;padding-left:18px;font-size:13px}
+.qerr{margin:0;padding-left:18px;font-size:14px}
 .qlist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
 .qlist>li{border:1px solid var(--sc-border);border-radius:var(--r-sm);padding:14px 16px;background:var(--surface-1)}
 .qlist .qh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
 .qlist .qn{font-weight:800;color:var(--brand-fg)}
 .qlist .qt{font-weight:600;flex:1;min-width:200px;white-space:pre-wrap}
-.qlist .lv{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--sc-faint)}
+.qlist .lv{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--sc-faint)}
 .qlist ul{list-style:none;margin:0;padding:0;display:grid;gap:4px}
 .qlist ul li{display:flex;gap:8px;padding:4px 8px;border-radius:6px;font-size:14px}
 .qlist ul li b{min-width:18px}
@@ -201,10 +201,10 @@ body.dlg-open{overflow:hidden}
 .admlist .am{flex:1;min-width:200px;display:flex;flex-direction:column}
 .admlist .am b{font-size:14px;word-break:break-all}
 .admlist .am span{font-size:12px;color:var(--sc-faint)}
-.admlist .tag{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--brand-fg)}
+.admlist .tag{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--brand-fg)}
 .pw{position:relative}
 .pw .input{padding-right:76px}
-.pw-t{position:absolute;right:6px;top:50%;transform:translateY(-50%);min-height:36px;padding:0 12px;border:0;border-radius:var(--r-sm);background:transparent;color:var(--brand-fg);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.pw-t{position:absolute;right:2px;top:50%;transform:translateY(-50%);min-height:44px;min-width:44px;padding:0 12px;border:0;border-radius:var(--r-sm);background:transparent;color:var(--brand-fg);font:inherit;font-size:13px;font-weight:700;cursor:pointer}
 .pw-t:hover{background:var(--tint-brand-lift)}
 .pw-t:focus-visible{outline:2px solid var(--brand-fg);outline-offset:1px}
 .qlist .qact{display:flex;gap:6px;margin-left:auto}
@@ -214,7 +214,7 @@ body.dlg-open{overflow:hidden}
 .qform .qopt{display:flex;align-items:center;gap:8px}
 .qform .qopt b{min-width:18px}
 .qform .qopt .input{flex:1;min-height:42px}
-.qform .qopt label.qok{display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap;cursor:pointer}
+.qform .qopt label.qok{display:flex;align-items:center;gap:6px;font-size:14px;white-space:nowrap;cursor:pointer}
 .qform .qopt input[type=radio]{width:18px;height:18px;accent-color:var(--sc-purple)}
 .qform select.input{max-width:200px}
 
@@ -222,7 +222,7 @@ body.dlg-open{overflow:hidden}
 @media (max-width:560px){
   .logo img{height:32px} .logo{padding:3px 6px}
   .top-in{padding-block:8px}
-  .top-r .who{font-size:13px;max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .top-r .who{font-size:14px;max-width:52vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   main{padding-block:14px 32px}
   /* the question card uses the full width of the phone */
   #sQuiz{margin-inline:-16px}
@@ -232,13 +232,13 @@ body.dlg-open{overflow:hidden}
   .qcount b{font-size:24px}
   .timer,.timer svg{width:52px;height:52px}
   .timer b{font-size:19px}
-  .segnote{margin:6px 0 14px;font-size:13px}
+  .segnote{margin:6px 0 14px;font-size:14px}
   .qtext{font-size:18px;line-height:1.35;margin-bottom:14px}
   .opts{gap:8px}
   .opt{min-height:52px;padding:10px 12px;gap:12px;font-size:15px}
   .opt .k{width:30px;height:30px}
   .qfoot{margin-top:16px;padding-block:10px calc(10px + env(safe-area-inset-bottom,0px));gap:6px}
-  .qfoot .saved{font-size:13px}
+  .qfoot .saved{font-size:14px}
   .qfoot .btn{min-height:48px}
   /* waiting room: tighter tiles so the instructions fit */
   #sReady .stats{gap:8px}
@@ -269,7 +269,7 @@ body.dlg-open{overflow:hidden}
   #aBody td:nth-child(1),#aBody td:nth-child(3){white-space:normal}
   #aBody td:nth-child(1){min-width:170px} #aBody td:nth-child(3){min-width:110px}
 }
-@media (min-width:901px) and (max-width:1200px){ th,td{padding:10px 9px} th{font-size:11px;letter-spacing:.04em} }
+@media (min-width:901px) and (max-width:1200px){ th,td{padding:10px 9px} th{font-size:12px;letter-spacing:.04em} }
 /* tablets and phones: one card per person instead of a wide table */
 @media (max-width:900px){
   .tw{overflow:visible;border:0;border-radius:0}
@@ -277,7 +277,7 @@ body.dlg-open{overflow:hidden}
   #sAdmin table,#sAdmin tbody{display:block}
   #aBody tr{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px;padding:14px 16px;margin-bottom:10px;border:1px solid var(--sc-border);border-radius:var(--r-md);background:var(--surface-2)}
   #aBody td{display:flex;flex-direction:column;gap:2px;padding:0;border:0;white-space:normal;text-align:left;position:static;box-shadow:none;background:none;min-width:0;overflow-wrap:anywhere}
-  #aBody td::before{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sc-faint)}
+  #aBody td::before{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--sc-faint)}
   #aBody td:nth-child(1){grid-column:1/-1;flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px;font-size:16px}
   #aBody td:nth-child(1) .rk{margin-right:4px}
   #aBody td:nth-child(2),#aBody td:nth-child(3){grid-column:span 2}
@@ -376,3 +376,9 @@ body.inv main{max-width:1180px}
 }
 @media (prefers-reduced-motion:reduce){#sAdmin .btn:active{transform:none}}
 #sAdmin .chip{white-space:nowrap}
+
+/* join form: privacy notice + required tick box */
+.consent .consent-note{font-size:14px;line-height:1.5}
+.tick{display:flex;align-items:center;gap:10px;min-height:44px;font-size:15px;font-weight:600;cursor:pointer}
+.tick input{width:22px;height:22px;flex:none;accent-color:var(--sc-purple);margin:0}
+.field.bad .tick{color:var(--sc-danger-fg)}
