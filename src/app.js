@@ -328,8 +328,16 @@ const scoreOf = r => {
   for (let i=0;i<N;i++){ if (a[i] >= 0) o.n++; if (a[i] === k[i]){ o.t++; const l = QS[i].l; if (l === 'Easy') o.e++; else if (l === 'Medium') o.m++; else o.h++; } }
   return o;
 };
-function rowsForExam(){
-  const id = marksId(exam), cur = results.filter(r => id && (r.track || 'pharmacist') === TR && r.examId === id);
+let selExam = '';
+const shownId = () => selExam || marksId(exam);
+// every exam that has saved results for this assessment, newest first
+function examIds(){
+  const ids = new Set(results.filter(r => (r.track || 'pharmacist') === TR && r.examId).map(r => String(r.examId)));
+  const now = marksId(exam); if (now) ids.add(now);
+  return [...ids].sort((a, b) => +b - +a);
+}
+function rowsForExam(id = shownId()){
+  const cur = results.filter(r => id && (r.track || 'pharmacist') === TR && r.examId === id);
   const byPhone = {};
   cur.sort((a,b) => (a.startedAt||0) - (b.startedAt||0)).forEach(r => { (byPhone[r.phone] = byPhone[r.phone] || []).push(r); });
   return Object.values(byPhone).map(list => Object.assign({extra:list.length-1, sc:scoreOf(list[0])}, list[0]));
@@ -340,7 +348,7 @@ $('aMsgX').onclick = () => msg('');
 
 function paintAdmin(){
   if (!isAdmin || $('sAdmin').hidden) return;
-  const s = eff(), live = s === 'live', all = rank(rowsForExam());
+  const s = eff(), live = s === 'live', all = rank(rowsForExam()), now = selExam ? rank(rowsForExam(marksId(exam))) : all;
   statusChip($('aChip'));
   $('aIdle').hidden = live; $('aLiveRow').hidden = !canJoin(s); $('aEndWrap').hidden = !live;
   if (!preview && (exam.status === 'idle' || exam.status === 'ended')) prepareExam();
@@ -349,15 +357,17 @@ function paintAdmin(){
   $('aStart').textContent = 'Start exam';
   $('aStart').disabled = false; { const why = startBlock(); $('aNoQs').textContent = why ? 'Start exam is blocked. ' + why : ''; $('aNoQs').hidden = !why || s === 'live'; } $('aTry').disabled = !N;
   const lc = lvCount(); $('thS').textContent = 'Score /' + N; $('thE').textContent = 'Easy /' + lc.e; $('thM').textContent = 'Medium /' + lc.m; $('thH').textContent = 'Hard /' + lc.h;
+  const nDone = now.filter(r => r.status === 'submitted').length, nProg = now.length - nDone;
   const done = all.filter(r => r.status === 'submitted').length, prog = all.length - done;
-  $('aEndText').textContent = prog
-    ? 'End the exam now? ' + prog + ' ' + (prog > 1 ? T.many + ' are' : T.one + ' is') + ' still taking the test. Their answers so far will be submitted.'
+  $('aEndText').textContent = nProg
+    ? 'End the exam now? ' + nProg + ' ' + (nProg > 1 ? T.many + ' are' : T.one + ' is') + ' still taking the test. Their answers so far will be submitted.'
     : 'End the exam now? Nobody is taking the test at the moment. No one else will be able to start.';
-  const scored = all.filter(r => r.sc && r.status === 'submitted'), avg = scored.length ? (scored.reduce((x,r)=>x+r.sc.t,0)/scored.length).toFixed(1) : '–';
-  $('aStats').innerHTML = [['Started',all.length,T.many,''],['In progress',prog,'taking the test','t-brand'],['Submitted',done,'finished','t-green'],['Average',avg,scored.length ? 'out of ' + N : 'no scores yet','']]
+  const scored = now.filter(r => r.sc && r.status === 'submitted'), avg = scored.length ? (scored.reduce((x,r)=>x+r.sc.t,0)/scored.length).toFixed(1) : '–';
+  $('aStats').innerHTML = [['Started',now.length,T.many,''],['In progress',nProg,'taking the test','t-brand'],['Submitted',nDone,'finished','t-green'],['Average',avg,scored.length ? 'out of ' + N : 'no scores yet','']]
     .map(([l,v,u,c]) => '<div class="stat '+c+'"><span class="sl">'+l+'</span><b>'+v+'</b><span class="su">'+u+'</span></div>').join('');
   $('aKeyWarn').hidden = !!key || !N || !$('aNoQs').hidden;
   $('aKeyNote').textContent = key ? 'Marks are worked out automatically. Staff never see the correct answers or their marks.' : '';
+  paintExamPicker();
   $('cAll').textContent = all.length; $('cRun').textContent = prog; $('cSub').textContent = done;
   document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.f === fSt)));
   const q = fTxt.trim().toLowerCase(), qd = q.replace(/\D/g,'');
@@ -366,7 +376,9 @@ function paintAdmin(){
     (!q || String(r.name).toLowerCase().includes(q) || (qd && String(r.phone).includes(qd))));
   const filtered = q || fSt !== 'all';
   $('aCount').textContent = all.length ? (filtered ? rows.length + ' of ' + all.length : all.length + ' ' + (all.length > 1 ? T.many : T.one)) : '';
-  if (!all.length){
+  if (!all.length && selExam){
+    $('aBody').innerHTML = '<tr><td colspan="10" class="empty"><b>No results for this exam</b><p>Pick another exam above.</p></td></tr>';
+  } else if (!all.length){
     $('aBody').innerHTML = '<tr><td colspan="10" class="empty"><b>No one has started the test yet</b><p>' + (live ? 'The exam is open. Share the exam link with the ' + T.many + '. Rows appear here as each one starts.' : 'Press Start exam, then share the exam link with the ' + T.many + '.') + '</p></td></tr>';
   } else if (!rows.length){
     $('aBody').innerHTML = '<tr><td colspan="10" class="empty"><b>No one matches</b><p>Nothing matches “' + esc(fTxt.trim() || '') + '” with this filter.</p><button class="btn btn-ghost" type="button" data-clear="1">Clear search and filter</button></td></tr>';
@@ -378,8 +390,8 @@ function paintAdmin(){
     }).join('');
   }
   $('aCode').textContent = secCode && secCode.examId === String(exam.startedAt) ? secCode.code : '------';
-  const nTr = results.filter(r => (r.track || 'pharmacist') === TR).length;
-  $('aClearText').textContent = 'Delete all ' + nTr + ' saved result' + (nTr === 1 ? '' : 's') + ' of the ' + T.name + ', from every exam? Download the mark list first if you need it. This cannot be undone.';
+  const nSel = clearRows().length, sid = shownId();
+  $('aClearText').textContent = 'Delete the ' + nSel + ' saved result' + (nSel === 1 ? '' : 's') + ' of the exam on ' + (sid ? new Date(+sid).toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'}) + ', ' + fmtT(+sid) : '') + '? Results of other exams are kept. Download the mark list first if you need it. This cannot be undone.';
   paintAdminTimes();
 }
 function paintAdminTimes(){
@@ -445,16 +457,21 @@ $('aEndYes').onclick = async () => {
   catch(e){ $('aErr').textContent = 'Could not end the exam: ' + errText(e) + '. Try again.'; }
   $('aEndYes').disabled = false; paintAdmin();
 };
+// results of the exam picked in "Show results for" (only these are cleared)
+const inSel = r => (r.track || 'pharmacist') === TR && shownId() && String(r.examId) === shownId();
+const clearRows = () => results.filter(inSel);
 $('aClear').onclick = () => {
-  if (!results.some(r => (r.track || 'pharmacist') === TR)){ msg('There are no saved results to clear for this assessment.'); return; }
+  if (!clearRows().length){ msg('There are no saved results for this exam.'); return; }
+  if (eff() === 'live' && shownId() === marksId(exam)){ msg('This exam is running. End it before clearing its results.'); return; }
   $('aClearBox').hidden = false; paintAdmin(); $('aClearNo').focus();
 };
 $('aClearNo').onclick = () => { $('aClearBox').hidden = true; $('aClear').focus(); };
 $('aClearYes').onclick = async () => {
-  const n = results.filter(r => (r.track || 'pharmacist') === TR).length; $('aClearYes').disabled = true;
+  if (eff() === 'live' && shownId() === marksId(exam)){ $('aClearBox').hidden = true; msg('This exam is running. End it before clearing its results.'); return; }
+  const n = clearRows().length; $('aClearYes').disabled = true;
   try { await Promise.all(Object.keys(rawDocs).map(id => { const o = rawDocs[id], keep = {}; let drop = 0;
-      Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0 && (o[k].track || 'pharmacist') === TR) drop++; else keep[k] = o[k]; });
-      if (!drop) return null; return Object.keys(keep).length ? db.doc('results/' + id).set(keep) : db.doc('results/' + id).delete(); })); $('aClearBox').hidden = true; msg(n + ' stored attempt' + (n === 1 ? '' : 's') + ' deleted.'); }
+      Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0 && inSel(o[k])) drop++; else keep[k] = o[k]; });
+      if (!drop) return null; return Object.keys(keep).length ? db.doc('results/' + id).set(keep) : db.doc('results/' + id).delete(); })); $('aClearBox').hidden = true; msg(n + ' result' + (n === 1 ? '' : 's') + ' of this exam deleted. Other exams were not changed.'); }
   catch(e){ msg('Could not delete the results: ' + errText(e) + '. Nothing was changed on your screen; try again.'); }
   $('aClearYes').disabled = false;
 };
@@ -472,7 +489,7 @@ function markData(){
   const rows = rank(rowsForExam());
   const lc = lvCount(), head = ['Rank','Name','Phone','Position','Score','Out of','Percentage','Easy (' + lc.e + ')','Medium (' + lc.m + ')','Hard (' + lc.h + ')','Answered','Left the test (times)','Status','Started','Finished'];
   const body = rows.map((r,i) => { const s = r.sc || {}; return [i+1, r.name, r.phone, r.position, s.t == null ? '' : s.t, N, s.t == null ? '' : Math.round(s.t/N*100) + '%', s.e == null ? '' : s.e, s.m == null ? '' : s.m, s.h == null ? '' : s.h, s.n == null ? '' : s.n, r.away || 0, r.status === 'submitted' ? 'Submitted' : 'In progress (Q' + Math.min(N,(r.i||0)+1) + ')', r.startedAt ? new Date(r.startedAt).toLocaleString() : '', r.finishedAt ? new Date(r.finishedAt).toLocaleString() : '']; });
-  const d0 = new Date(exam.startedAt || Date.now());
+  const d0 = new Date(+shownId() || Date.now());
   const stamp = d0.getFullYear() + '-' + String(d0.getMonth()+1).padStart(2,'0') + '-' + String(d0.getDate()).padStart(2,'0');
   return {rows, head, body, stamp, d0};
 }
@@ -586,7 +603,7 @@ function route(){
   if (!isAdmin) return;
   const h = (location.hash || '').slice(1);
   if (TRACKS[h]){
-    useTrack(h); applyTrackText(); fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = ''; if (typeof qRepaint === 'function') qRepaint();
+    useTrack(h); applyTrackText(); selExam = ''; fSt = 'all'; fTxt = ''; $('aSearch').value = ''; endArmed = false; $('aClearBox').hidden = true; msg(''); $('aErr').textContent = ''; if (typeof qRepaint === 'function') qRepaint();
     $('who').textContent = 'Invigilator · ' + T.name; show('sAdmin'); paintAdmin(); $('aHome').focus();
   } else { $('who').textContent = 'Invigilator view'; $('topName').textContent = 'All assessments'; show('sHome'); paintHome(); }
 }
@@ -641,6 +658,30 @@ function resume(){
   if (s.started && s.done){ sess = null; lsSet(null); return; }
   goNext();
 }
+function applyResults(s){
+  resDocs = s.docs.map(d => d.id); results = []; Object.keys(rawDocs).forEach(k => delete rawDocs[k]);
+  s.docs.forEach(d => { const o = d.data(); rawDocs[d.id] = o; Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0) results.push(Object.assign({_id:k}, o[k])); }); });
+  $('aUpdated').textContent = 'Updated ' + fmtT(Date.now()); paintAdmin(); paintHome();
+}
+function examLabel(id, first){
+  const d = new Date(+id), n = new Set(results.filter(r => (r.track || 'pharmacist') === TR && String(r.examId) === id).map(r => r.phone)).size;
+  return (first ? 'Latest exam · ' : '') + d.toLocaleDateString(undefined, {day:'numeric', month:'short', year:'numeric'}) + ', ' + fmtT(+id) + ' · ' + n + ' ' + (n === 1 ? T.one : T.many);
+}
+function paintExamPicker(){
+  const ids = examIds(), sel = $('aExamSel');
+  if (selExam && !ids.includes(selExam)) selExam = '';
+  const html = ids.length ? ids.map((id, i) => '<option value="' + (i ? id : '') + '">' + esc(examLabel(id, !i)) + '</option>').join('') : '<option value="">No exams yet</option>';
+  if (sel.dataset.html !== html){ sel.innerHTML = html; sel.dataset.html = html; }
+  sel.value = selExam; sel.disabled = ids.length < 2;
+  $('aOldNote').hidden = !selExam;
+}
+$('aExamSel').onchange = () => { selExam = $('aExamSel').value; fSt = 'all'; fTxt = ''; $('aSearch').value = ''; paintAdmin(); };
+$('aRefresh').onclick = async () => {
+  const b = $('aRefresh'); b.disabled = true; b.textContent = 'Refreshing…';
+  try { applyResults(await db.collection('results').get({source: 'server'})); msg('Mark list refreshed.'); }
+  catch(e){ msg('Could not refresh the mark list: ' + errText(e) + '. Check your internet and try again.'); }
+  b.disabled = false; b.textContent = 'Refresh';
+};
 async function boot(){
   { const h = (location.hash || '').slice(1); useTrack(TRACKS[h] ? h : 'pharmacist'); }
   applyTrackText(); show('sLogin'); statusChip($('stChip'));
@@ -660,7 +701,7 @@ async function boot(){
       db.doc(TRACKS[tr].key).onSnapshot(s => { keys[tr] = s.exists ? s.data() : null; if (tr === TR) key = keys[tr]; paintAdmin(); if (typeof qRepaint === 'function') qRepaint(); });
       db.doc(TRACKS[tr].code).onSnapshot(s => { codes[tr] = s.exists ? s.data() : null; if (tr === TR) secCode = codes[tr]; paintAdmin(); });
     });
-    db.collection('results').onSnapshot(s => { resDocs = s.docs.map(d => d.id); results = []; Object.keys(rawDocs).forEach(k => delete rawDocs[k]); s.docs.forEach(d => { const o = d.data(); rawDocs[d.id] = o; Object.keys(o).forEach(k => { if (k.indexOf('a_') === 0) results.push(Object.assign({_id:k}, o[k])); }); }); paintAdmin(); paintHome(); });
+    db.collection('results').onSnapshot(applyResults);
     if (typeof startAdmins === 'function') startAdmins();
   } else db.doc(T.state).onSnapshot(onExam, () => {});
   if (!isAdmin) setTimeout(() => { if (!firstState){ firstState = true; resume(); } }, 3000);

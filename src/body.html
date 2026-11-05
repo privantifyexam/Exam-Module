@@ -235,10 +235,10 @@
   <div class="card stack" style="margin-top:16px" id="qCard">
     <div class="row between">
       <h2>Questions <span class="muted small" id="qCount"></span></h2>
-      <div class="row"><button class="btn btn-sm btn-ghost" id="qView" type="button" aria-haspopup="dialog">View and edit questions</button></div>
+      <div class="row"><button class="btn btn-sm" id="qView" type="button" aria-haspopup="dialog">View and edit questions</button></div>
     </div>
     <p class="help">To add or change questions, choose an Excel file below. Put one question per row with the columns level, question, option_a to option_d and answer (the letter of the correct choice). This replaces all current questions. You can't change questions while an exam is running.</p>
-    <div class="row"><input class="input" id="qFile" type="file" accept=".xlsx,.xls,.csv" aria-label="Questions file" style="flex:1;min-width:220px"></div>
+    <div class="row"><input class="input" id="qFile" type="file" accept=".xlsx,.xls,.csv" aria-label="Questions file" style="flex:1;min-width:220px"><button class="btn btn-ghost" id="qFileX" type="button" hidden>Remove file</button></div>
     <div class="notice bad stack s8" id="qErrBox" role="alert" hidden><b id="qErrT"></b><ul class="qerr" id="qErrs"></ul><div><button class="btn btn-sm btn-ghost" id="qTpl" type="button" hidden>Download template</button></div></div>
     <div class="notice info stack s8" id="qOkBox" role="status" hidden>
       <span id="qOkT"></span>
@@ -248,11 +248,16 @@
   <div class="card stack" style="margin-top:16px">
     <div class="row between">
       <h2>Mark list <span class="muted small" id="aCount"></span></h2>
-      <div class="row"><div class="dl" role="group" aria-label="Download mark list"><span class="dl-l">Download</span><button class="btn btn-sm btn-ghost" data-dl="csv">CSV</button><button class="btn btn-sm btn-ghost" data-dl="xlsx">Excel</button><button class="btn btn-sm btn-ghost" data-dl="pdf">PDF</button></div><button class="btn btn-sm btn-quiet" id="aClear">Clear all results</button></div>
+      <div class="row"><div class="dl" role="group" aria-label="Download mark list"><span class="dl-l">Download</span><button class="btn btn-sm btn-ghost" data-dl="csv">CSV</button><button class="btn btn-sm btn-ghost" data-dl="xlsx">Excel</button><button class="btn btn-sm btn-ghost" data-dl="pdf">PDF</button></div><button class="btn btn-sm btn-ghost" id="aRefresh" type="button">Refresh</button><button class="btn btn-sm btn-quiet" id="aClear">Clear these results</button></div>
     </div>
+    <div class="row">
+      <div class="field"><label for="aExamSel">Show results for</label><select class="input" id="aExamSel" style="min-width:280px"></select></div>
+      <span class="muted small" id="aUpdated" style="align-self:flex-end;padding-bottom:12px"></span>
+    </div>
+    <p class="notice info" id="aOldNote" hidden>You're looking at an older exam. Its marks are worked out with the current questions and answers, so they can differ from the marks given at the time if the questions have changed since.</p>
     <div class="notice bad stack s8" id="aClearBox" role="alertdialog" aria-labelledby="aClearText" hidden>
       <span id="aClearText"></span>
-      <div class="row"><button class="btn btn-danger" id="aClearYes">Delete all results</button><button class="btn btn-ghost" id="aClearNo">Cancel</button></div>
+      <div class="row"><button class="btn btn-danger" id="aClearYes">Delete these results</button><button class="btn btn-ghost" id="aClearNo">Cancel</button></div>
     </div>
     <div class="row filters">
       <div class="field grow"><label class="sr-only" for="aSearch">Search name or phone</label><input class="input" id="aSearch" type="search" placeholder="Search name or phone" autocomplete="off"></div>

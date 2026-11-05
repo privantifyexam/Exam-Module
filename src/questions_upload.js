@@ -58,10 +58,14 @@ function paintQs(){
   $('qCount').textContent = N ? '· ' + N + ' (Easy ' + lc.e + ', Medium ' + lc.m + ', Hard ' + lc.h + ')' + (key ? '' : ' · no key') : '· none yet';
   $('qFile').disabled = eff() === 'live';
 }
-function qReset(){ $('qTpl').hidden = true; qPending = null; $('qFile').value = ''; $('qErrBox').hidden = true; $('qOkBox').hidden = true; }
+const Q_MAX_BYTES = 5 * 1024 * 1024;   // a 50-question file is a few KB; anything this big is the wrong file
+function qReset(){ $('qTpl').hidden = true; qPending = null; $('qFile').value = ''; $('qFileX').hidden = true; $('qErrBox').hidden = true; $('qOkBox').hidden = true; }
 $('qFile').onchange = async () => {
   const f = $('qFile').files[0]; $('qErrBox').hidden = true; $('qOkBox').hidden = true; qPending = null;
+  $('qFileX').hidden = !f;
   if (!f) return;
+  if (!f.size){ $('qErrT').textContent = 'This file is empty. Choose the Excel file that has your questions.'; $('qErrs').innerHTML = ''; $('qTpl').hidden = true; $('qErrBox').hidden = false; return; }
+  if (f.size > Q_MAX_BYTES){ $('qErrT').textContent = 'This file is too big (' + (f.size / 1048576).toFixed(1) + ' MB). A questions file should be well under 5 MB. Check you picked the right file.'; $('qErrs').innerHTML = ''; $('qTpl').hidden = true; $('qErrBox').hidden = false; return; }
   const fail = (title, format) => { $('qErrT').textContent = title; $('qErrs').innerHTML = ''; $('qTpl').hidden = !format; $('qErrBox').hidden = false; };
   if (!/\.(xlsx|xls|csv)$/i.test(f.name)) return fail('Choose an Excel file (.xlsx). The file you picked isn\'t a spreadsheet. Download the template below and fill it in.', true);
   let rows;
@@ -88,6 +92,8 @@ $('qFile').onchange = async () => {
   $('qOkBox').hidden = false; $('qSave').focus();
 };
 $('qCancel').onclick = qReset;
+// take the chosen file off the form: nothing is saved, the current questions stay as they are
+$('qFileX').onclick = () => { const had = !!qPending; qReset(); msg(had ? 'File removed. Nothing was saved; the current questions are unchanged.' : 'File removed.'); $('qFile').focus(); };
 // saves the whole question list and its correct answers (same order) for this assessment
 async function saveSet(qs, answers){
   await db.doc('questions/' + TR).set({qs, updatedAt: Date.now()});
@@ -96,7 +102,8 @@ async function saveSet(qs, answers){
   if (exam.status === 'open') await db.doc(T.state).set(Object.assign({}, exam, {count: qs.length}));   // staff see the count while waiting
 }
 $('qSave').onclick = async () => {
-  if (!qPending) return;
+  // the file must still be chosen and unchanged since it was checked
+  if (!qPending || !$('qFile').files.length){ qReset(); msg('Choose the Excel file again, then press Save questions.'); return; }
   if (eff() === 'live'){ $('qErrT').textContent = 'End the exam before changing its questions.'; $('qErrs').innerHTML = ''; $('qErrBox').hidden = false; return; }
   const b = $('qSave'), r = qPending; b.disabled = true; b.textContent = 'Saving…';
   try {

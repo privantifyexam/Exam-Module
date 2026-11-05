@@ -16,7 +16,8 @@
     get: async () => snap(p), set: async d => { store[p] = d; fire(); }, update: async d => { store[p] = Object.assign({}, store[p], d); fire(); }, delete: async () => { delete store[p]; fire(); },
     onSnapshot: cb => { const f = () => cb(snap(p)); subs.push(f); setTimeout(f, 50); }
   });
-  const db = {doc, collection: c => ({onSnapshot: cb => { const f = () => cb({docs: Object.keys(store).filter(k => k.startsWith(c + '/')).map(snap)}); subs.push(f); setTimeout(f, 50); }})};
+  const list = c => ({docs: Object.keys(store).filter(k => k.startsWith(c + '/')).map(snap)});
+  const db = {doc, collection: c => ({get: async () => list(c), onSnapshot: cb => { const f = () => cb(list(c)); subs.push(f); setTimeout(f, 50); }})};
   const user = {canEdit: async () => !!window.__admin, id: async () => 'u_me'};
   window.claude = {use: async n => n === 'db' ? db : n === 'user' ? user : n === 'downloads' ? {save: async () => {}} : null};
 })();
